@@ -1,6 +1,6 @@
 ---
 title: THE GRID
-emoji: 🔷
+emoji: 🟦
 colorFrom: cyan
 colorTo: yellow
 sdk: docker
@@ -14,25 +14,20 @@ short_description: Isometric extraction protocol. Survive the Convergence.
 
 Isometric extraction protocol. Loot the lattice. Outrun the Convergence.
 
-Novelty frontier exhibit for **SZL Holdings**, wired to founder profile **[betterwithage](https://huggingface.co/betterwithage)**.
+L4 frontier exhibit. Not a governed kernel. No receipts. Λ = Conjecture 1.
 
 | Lane | URL |
 |---|---|
 | Source | https://github.com/szl-holdings/the-grid |
-| Founder HF | https://huggingface.co/betterwithage |
-| Org HF | https://huggingface.co/SZLHOLDINGS |
-| Frontier tracker | https://github.com/szl-holdings/szl-hf-frontier |
+| Play now | [play.html](./play.html) |
+| Chosen Space | https://huggingface.co/spaces/SZLHOLDINGS/the-grid |
+| Founder pin | https://huggingface.co/spaces/betterwithage/the-grid |
+| Frontier | https://github.com/szl-holdings/szl-hf-frontier |
 
-Playable 16×16 lattice. Not a governed kernel. No receipts.
+Org Space is **UNAVAILABLE** until a founder `HF_TOKEN` runs `scripts/payload01_align_push.py`. This chat does not hold that token.
 
-JACK IN → DEPLOY → Vesper or Nyx → optional **CONVERGENCE**
+Do not host this on a-11-oy.com or a11oy.net.
 
-WASD move · Q/E tools · R scan · F extract · Space overclock
-
-```bash
-export GITHUB_TOKEN=ghp_...
-export HF_TOKEN=hf_...
-python3 scripts/payload01_align_push.py
-```
+JACK IN → DEPLOY Vesper or Nyx → loot cyan → gold extract pad → F when juice ≥ 20. WASD move. Space overclock. Convergence shrinks after T+45.
 
 Apache-2.0.
