@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>THE GRID — exhibit</title>
+<title>THE GRID — L4 exhibit</title>
 <style>
-  :root{--cyan:#22f0d4;--gold:#e8c36a;--bg:#07080c;--muted:#7a8494}
+  :root{--cyan:#22f0d4;--gold:#e8c36a;--bg:#07080c;--muted:#7a8494;--red:#ff4d6d}
   html,body{margin:0;height:100%;background:var(--bg);color:#e8f6f2;font-family:Rajdhani,Segoe UI,sans-serif;overflow:hidden}
   canvas{display:block;width:100%;height:100%}
   #hud{position:fixed;inset:0;pointer-events:none;display:flex;flex-direction:column;justify-content:space-between;padding:16px 20px}
@@ -13,66 +13,153 @@
   .tag{font-family:Orbitron,monospace;letter-spacing:.28em;font-size:10px;color:var(--cyan)}
   .muted{color:var(--muted);font-size:12px}
   .gold{color:var(--gold)}
-  #boot{position:fixed;inset:0;background:#05060a;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;cursor:pointer}
-  #boot h1{font-family:Orbitron,sans-serif;letter-spacing:.4em;color:var(--cyan);margin:0;font-size:28px}
-  button.op{pointer-events:auto;background:transparent;border:1px solid var(--cyan);color:var(--cyan);padding:8px 14px;margin:4px;cursor:pointer;letter-spacing:.2em}
+  .warn{color:var(--red)}
+  #boot{position:fixed;inset:0;background:#05060a;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;z-index:2}
+  #boot h1{font-family:Orbitron,sans-serif;letter-spacing:.42em;color:var(--cyan);margin:0;font-size:30px}
+  .ops{display:grid;grid-template-columns:repeat(4,minmax(120px,1fr));gap:8px;max-width:640px}
+  button.op{pointer-events:auto;background:transparent;border:1px solid var(--cyan);color:var(--cyan);padding:8px 10px;cursor:pointer;letter-spacing:.16em;font-family:Rajdhani,sans-serif}
   button.op:hover{background:#22f0d422}
+  #end{display:none;position:fixed;inset:0;background:#05060acc;align-items:center;justify-content:center;flex-direction:column;gap:12px;z-index:3}
+  #end.show{display:flex}
+  button.op.ghost{border-color:#7a8494;color:#c9d4de}
 </style>
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600&family=Rajdhani:wght@500;700&display=swap" rel="stylesheet">
 </head>
 <body>
 <canvas id="c"></canvas>
 <div id="hud">
-  <div class="row"><div><div class="tag">SZL HOLDINGS · BETTERWITHAGE · L4 EXHIBIT</div><div class="muted">Not a kernel. Not a receipt. Λ = Conjecture 1.</div></div><div class="gold" id="clock">T+0</div></div>
-  <div class="row"><div id="stats" class="muted">JACK IN</div><div class="muted">WASD move · F extract · Space overclock</div></div>
-</div>
-<div id="boot">
-  <div class="tag">FRONTIER EXHIBIT</div>
-  <h1>THE GRID</h1>
-  <div class="muted">Loot the lattice. Outrun the Convergence.</div>
-  <div>
-    <button class="op" data-op="vesper">DEPLOY VESPER</button>
-    <button class="op" data-op="nyx">DEPLOY NYX</button>
+  <div class="row">
+    <div>
+      <div class="tag">SZL HOLDINGS · BETTERWITHAGE · L4 EXHIBIT</div>
+      <div class="muted">Not a kernel. Not a receipt. Not a11oy. winner=null. Metal BLOCKED_NO_METAL.</div>
+    </div>
+    <div class="gold" id="clock">T+0</div>
+  </div>
+  <div class="row">
+    <div id="stats" class="muted">JACK IN</div>
+    <div class="muted">WASD move · Q/E tool · R scan · F extract · Space overclock</div>
   </div>
 </div>
+<div id="boot">
+  <div class="tag">FRONTIER EXHIBIT · RECONSTRUCTION</div>
+  <h1>THE GRID</h1>
+  <div class="muted">16×16 lattice · eight operators · Convergence ring · extract windows</div>
+  <div class="muted">Original Vite src/game never landed in this tree. This file is the playable source of record.</div>
+  <div class="ops" id="opgrid"></div>
+</div>
+<div id="end">
+  <div class="tag" id="endtag">EXTRACT</div>
+  <h1 id="endtitle" style="font-family:Orbitron,sans-serif;letter-spacing:.3em;color:var(--gold);margin:0;font-size:22px">OUT</h1>
+  <div class="muted" id="endstats"></div>
+  <button class="op ghost" id="again">JACK IN AGAIN</button>
+</div>
 <script>
-const N=16, TILE_W=56, TILE_H=28;
-const ops={vesper:{name:"VESPER",col:"#22f0d4",spd:2.4},nyx:{name:"NYX",col:"#c084fc",spd:2.8}};
-let op=ops.vesper, gx=2, gy=13, juice=0, heat=0, t=0, running=false, extracted=false;
-const loot=[];
+const N=16, TILE_W=54, TILE_H=27;
+const TOOLS=["SCANNER","EXTRACTOR","DAMPER"];
+const OPS={
+  vesper:{name:"VESPER",col:"#22f0d4",spd:2.35,scan:3.4,ext:1.00,heat:1.00},
+  nyx:{name:"NYX",col:"#c084fc",spd:2.90,scan:2.8,ext:0.95,heat:1.15},
+  quill:{name:"QUILL",col:"#7dd3fc",spd:2.10,scan:5.1,ext:1.00,heat:0.90},
+  riven:{name:"RIVEN",col:"#fb7185",spd:2.25,scan:3.0,ext:1.45,heat:1.05},
+  sable:{name:"SABLE",col:"#94a3b8",spd:2.05,scan:3.2,ext:1.05,heat:0.62},
+  helix:{name:"HELIX",col:"#34d399",spd:2.55,scan:3.1,ext:1.00,heat:1.35},
+  wraith:{name:"WRAITH",col:"#a78bfa",spd:2.70,scan:4.4,ext:0.90,heat:1.10},
+  aegis:{name:"AEGIS",col:"#fbbf24",spd:1.85,scan:2.6,ext:1.10,heat:0.55}
+};
+const LS_KEY="szl.the-grid.exhibit.v1";
+function loadMem(){try{return JSON.parse(localStorage.getItem(LS_KEY)||"{}")}catch(e){return {}}}
+function saveMem(p){localStorage.setItem(LS_KEY,JSON.stringify(p))}
+const mem=Object.assign({best:0,runs:0,last:"vesper"},loadMem());
+
+let op=OPS.vesper, gx=2, gy=13, juice=0, heat=0, t=0, running=false, extracted=false, burned=false;
+let tool=0, scanPulse=0, convOn=false;
+const loot=[], windows=[];
+
 function seed(){
-  loot.length=0;
+  loot.length=0; windows.length=0;
   for(let i=0;i<18;i++) loot.push({x:(i*5+3)%N,y:(i*7+2)%N,v:10+((i*3)%20),got:false});
+  windows.push({x:13,y:2,open:true},{x:3,y:3,open:false},{x:12,y:12,open:false});
 }
 seed();
-const extract={x:13,y:2};
-function iso(x,y){return [(x-y)*TILE_W/2,(x+y)*TILE_H/2];}
+
+const grid=document.getElementById("opgrid");
+Object.keys(OPS).forEach(k=>{
+  const b=document.createElement("button");
+  b.className="op"; b.textContent="DEPLOY "+OPS[k].name; b.dataset.op=k;
+  b.onclick=()=>deploy(k);
+  grid.appendChild(b);
+});
+document.getElementById("again").onclick=()=>{
+  document.getElementById("end").classList.remove("show");
+  document.getElementById("boot").style.display="flex";
+};
+
+function deploy(key){
+  op=OPS[key]||OPS.vesper;
+  gx=2; gy=13; juice=0; heat=0; t=0; extracted=false; burned=false; tool=0; scanPulse=0; convOn=false;
+  seed(); running=true;
+  mem.last=key; mem.runs=(mem.runs||0)+1; saveMem(mem);
+  document.getElementById("boot").style.display="none";
+}
+
+function iso(x,y){return [(x-y)*TILE_W/2,(x+y)*TILE_H/2]}
 const c=document.getElementById("c"), ctx=c.getContext("2d");
 function resize(){c.width=innerWidth*devicePixelRatio;c.height=innerHeight*devicePixelRatio;ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0)}
 resize(); addEventListener("resize",resize);
 const keys={};
-addEventListener("keydown",e=>{keys[e.key.toLowerCase()]=true; if(e.code==="Space") e.preventDefault();});
+addEventListener("keydown",e=>{
+  const k=e.key.toLowerCase();
+  keys[k]=true;
+  if(e.code==="Space") e.preventDefault();
+  if(!running) return;
+  if(k==="q") tool=(tool+TOOLS.length-1)%TOOLS.length;
+  if(k==="e") tool=(tool+1)%TOOLS.length;
+  if(k==="r") scanPulse=1.8;
+  if(k==="c") convOn=true;
+});
 addEventListener("keyup",e=>{keys[e.key.toLowerCase()]=false});
-document.querySelectorAll(".op").forEach(b=>b.onclick=()=>{op=ops[b.dataset.op]; running=true; document.getElementById("boot").style.display="none";});
-function tick(dt){
-  if(!running||extracted) return;
-  t+=dt; heat=Math.max(0,heat-dt*8);
-  const boost=keys[" "]?1.7:1;
-  if(keys[" "]) heat=Math.min(100,heat+dt*30);
-  const s=op.spd*boost*dt*(heat>90?0.4:1);
-  if(keys.w){gx-=s; gy-=s} if(keys.s){gx+=s; gy+=s}
-  if(keys.a){gx-=s; gy+=s} if(keys.d){gx+=s; gy-=s}
-  gx=Math.max(0,Math.min(N-1,gx)); gy=Math.max(0,Math.min(N-1,gy));
-  for(const L of loot){if(!L.got && Math.hypot(L.x-gx,L.y-gy)<0.55){L.got=true; juice+=L.v}}
-  const conv=Math.max(0,(t-45)/25);
-  const ring=8-conv*6;
-  const dist=Math.hypot(gx-7.5,gy-7.5);
-  if(conv>0 && dist>ring) heat=Math.min(100,heat+dt*40);
-  if(keys.f && Math.hypot(extract.x-gx,extract.y-gy)<0.7 && juice>=20) extracted=true;
+
+function convAmt(){return convOn?Math.max(0,(t-8)/28):Math.max(0,(t-45)/25)}
+function ringR(){return 8-convAmt()*6.2}
+function finish(ok){
+  running=false;
+  if(ok) extracted=true; else burned=true;
+  mem.best=Math.max(mem.best||0,juice); saveMem(mem);
+  document.getElementById("endtag").textContent=ok?"EXTRACT WINDOW":"CONVERGENCE";
+  document.getElementById("endtitle").textContent=ok?"EXTRACTED":"BURNED";
+  document.getElementById("endtitle").style.color=ok?"#e8c36a":"#ff4d6d";
+  document.getElementById("endstats").textContent=`${op.name}  JUICE ${juice}  BEST ${mem.best}  RUNS ${mem.runs}`;
+  document.getElementById("end").classList.add("show");
 }
+
+function tick(dt){
+  if(!running) return;
+  t+=dt; heat=Math.max(0,heat-dt*8*(TOOLS[tool]==="DAMPER"?1.8:1));
+  scanPulse=Math.max(0,scanPulse-dt);
+  const boost=keys[" "]? (op.name==="HELIX"?2.1:1.7):1;
+  if(keys[" "]) heat=Math.min(100,heat+dt*28*op.heat);
+  const s=op.spd*boost*dt*(heat>90?0.42:1);
+  if(keys.w){gx-=s;gy-=s} if(keys.s){gx+=s;gy+=s}
+  if(keys.a){gx-=s;gy+=s} if(keys.d){gx+=s;gy-=s}
+  gx=Math.max(0,Math.min(N-1,gx)); gy=Math.max(0,Math.min(N-1,gy));
+  for(const L of loot){
+    if(!L.got && Math.hypot(L.x-gx,L.y-gy)<0.55){L.got=true; juice+=Math.round(L.v*op.ext)}
+  }
+  windows.forEach((w,i)=>{w.open = (i===0) || ((Math.floor(t/9)+i)%3===0)});
+  const conv=convAmt();
+  const ring=ringR();
+  const dist=Math.hypot(gx-7.5,gy-7.5);
+  if(conv>0 && dist>ring) heat=Math.min(100,heat+dt*42*op.heat);
+  if(heat>=100) finish(false);
+  if(keys.f && TOOLS[tool]==="EXTRACTOR" && juice>=20){
+    const on=windows.some(w=>w.open && Math.hypot(w.x-gx,w.y-gy)<0.7);
+    if(on) finish(true);
+  }
+}
+
 function diamond(x,y,col,a=1){
   const [sx,sy]=iso(x,y);
-  const ox=innerWidth/2, oy=80;
+  const ox=innerWidth/2, oy=Math.max(56,innerHeight*0.12);
   ctx.beginPath();
   ctx.moveTo(ox+sx,oy+sy);
   ctx.lineTo(ox+sx+TILE_W/2,oy+sy+TILE_H/2);
@@ -80,24 +167,29 @@ function diamond(x,y,col,a=1){
   ctx.lineTo(ox+sx-TILE_W/2,oy+sy+TILE_H/2);
   ctx.closePath(); ctx.globalAlpha=a; ctx.fillStyle=col; ctx.fill(); ctx.globalAlpha=1;
 }
+
 function draw(){
   ctx.fillStyle="#07080c"; ctx.fillRect(0,0,innerWidth,innerHeight);
-  const conv=Math.max(0,(t-45)/25); const ring=8-conv*6;
+  const conv=convAmt(); const ring=ringR();
+  const vision=op.scan+(scanPulse>0?2.4:0)+(TOOLS[tool]==="SCANNER"?1.2:0);
   for(let y=0;y<N;y++) for(let x=0;x<N;x++){
     const d=Math.hypot(x-7.5,y-7.5);
-    const fog=d>4.2&&Math.hypot(x-gx,y-gy)>3.2;
-    let col= fog?"#10141c": ((x+y)%2?"#12202a":"#0e1a22");
+    const fog=Math.hypot(x-gx,y-gy)>vision && !(op.name==="WRAITH" && d<5.5);
+    let col=fog?"#10141c":((x+y)%2?"#12202a":"#0e1a22");
     if(conv>0 && d>ring) col="#2a0b12";
     diamond(x,y,col);
   }
-  diamond(extract.x,extract.y,"#e8c36a");
-  for(const L of loot) if(!L.got) diamond(L.x,L.y,"#22f0d4",0.85);
+  for(const w of windows) diamond(w.x,w.y,w.open?"#e8c36a":"#5a4a22",w.open?1:0.45);
+  for(const L of loot) if(!L.got) diamond(L.x,L.y,"#22f0d4",0.88);
   diamond(gx,gy,op.col);
-  document.getElementById("clock").textContent = extracted? "EXTRACTED": ("T+"+Math.floor(t));
-  document.getElementById("stats").textContent = `${op.name}  JUICE ${juice}  HEAT ${Math.floor(heat)}  ${extracted?"OUT":"IN GRID"}`;
+  const state=extracted?"EXTRACTED":burned?"BURNED":(conv>0?"CONVERGENCE":"IN GRID");
+  document.getElementById("clock").textContent=(extracted||burned)?state:("T+"+Math.floor(t));
+  document.getElementById("clock").className=burned?"warn":"gold";
+  document.getElementById("stats").textContent=`${op.name} · ${TOOLS[tool]} · JUICE ${juice} · HEAT ${Math.floor(heat)} · BEST ${mem.best||0} · ${state}`;
 }
 let last=performance.now();
 function loop(now){tick((now-last)/1000); last=now; draw(); requestAnimationFrame(loop)}
 requestAnimationFrame(loop);
 </script>
-</body></html>
+</body>
+</html>
