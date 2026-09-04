@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>THE GRID — exhibit</title>
+<style>
+  :root{--cyan:#22f0d4;--gold:#e8c36a;--bg:#07080c;--muted:#7a8494}
+  html,body{margin:0;height:100%;background:var(--bg);color:#e8f6f2;font-family:Rajdhani,Segoe UI,sans-serif;overflow:hidden}
+  canvas{display:block;width:100%;height:100%}
+  #hud{position:fixed;inset:0;pointer-events:none;display:flex;flex-direction:column;justify-content:space-between;padding:16px 20px}
+  .row{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+  .tag{font-family:Orbitron,monospace;letter-spacing:.28em;font-size:10px;color:var(--cyan)}
+  .muted{color:var(--muted);font-size:12px}
+  .gold{color:var(--gold)}
+  #boot{position:fixed;inset:0;background:#05060a;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;cursor:pointer}
+  #boot h1{font-family:Orbitron,sans-serif;letter-spacing:.4em;color:var(--cyan);margin:0;font-size:28px}
+  button.op{pointer-events:auto;background:transparent;border:1px solid var(--cyan);color:var(--cyan);padding:8px 14px;margin:4px;cursor:pointer;letter-spacing:.2em}
+  button.op:hover{background:#22f0d422}
+</style>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600&family=Rajdhani:wght@500;700&display=swap" rel="stylesheet">
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud">
+  <div class="row"><div><div class="tag">SZL HOLDINGS · BETTERWITHAGE · L4 EXHIBIT</div><div class="muted">Not a kernel. Not a receipt. Λ = Conjecture 1.</div></div><div class="gold" id="clock">T+0</div></div>
+  <div class="row"><div id="stats" class="muted">JACK IN</div><div class="muted">WASD move · F extract · Space overclock</div></div>
+</div>
+<div id="boot">
+  <div class="tag">FRONTIER EXHIBIT</div>
+  <h1>THE GRID</h1>
+  <div class="muted">Loot the lattice. Outrun the Convergence.</div>
+  <div>
+    <button class="op" data-op="vesper">DEPLOY VESPER</button>
+    <button class="op" data-op="nyx">DEPLOY NYX</button>
+  </div>
+</div>
+<script>
+const N=16, TILE_W=56, TILE_H=28;
+const ops={vesper:{name:"VESPER",col:"#22f0d4",spd:2.4},nyx:{name:"NYX",col:"#c084fc",spd:2.8}};
+let op=ops.vesper, gx=2, gy=13, juice=0, heat=0, t=0, running=false, extracted=false;
+const loot=[];
+function seed(){
+  loot.length=0;
+  for(let i=0;i<18;i++) loot.push({x:(i*5+3)%N,y:(i*7+2)%N,v:10+((i*3)%20),got:false});
+}
+seed();
+const extract={x:13,y:2};
+function iso(x,y){return [(x-y)*TILE_W/2,(x+y)*TILE_H/2];}
+const c=document.getElementById("c"), ctx=c.getContext("2d");
+function resize(){c.width=innerWidth*devicePixelRatio;c.height=innerHeight*devicePixelRatio;ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0)}
+resize(); addEventListener("resize",resize);
+const keys={};
+addEventListener("keydown",e=>{keys[e.key.toLowerCase()]=true; if(e.code==="Space") e.preventDefault();});
+addEventListener("keyup",e=>{keys[e.key.toLowerCase()]=false});
+document.querySelectorAll(".op").forEach(b=>b.onclick=()=>{op=ops[b.dataset.op]; running=true; document.getElementById("boot").style.display="none";});
+function tick(dt){
+  if(!running||extracted) return;
+  t+=dt; heat=Math.max(0,heat-dt*8);
+  const boost=keys[" "]?1.7:1;
+  if(keys[" "]) heat=Math.min(100,heat+dt*30);
+  const s=op.spd*boost*dt*(heat>90?0.4:1);
+  if(keys.w){gx-=s; gy-=s} if(keys.s){gx+=s; gy+=s}
+  if(keys.a){gx-=s; gy+=s} if(keys.d){gx+=s; gy-=s}
+  gx=Math.max(0,Math.min(N-1,gx)); gy=Math.max(0,Math.min(N-1,gy));
+  for(const L of loot){if(!L.got && Math.hypot(L.x-gx,L.y-gy)<0.55){L.got=true; juice+=L.v}}
+  const conv=Math.max(0,(t-45)/25);
+  const ring=8-conv*6;
+  const dist=Math.hypot(gx-7.5,gy-7.5);
+  if(conv>0 && dist>ring) heat=Math.min(100,heat+dt*40);
+  if(keys.f && Math.hypot(extract.x-gx,extract.y-gy)<0.7 && juice>=20) extracted=true;
+}
+function diamond(x,y,col,a=1){
+  const [sx,sy]=iso(x,y);
+  const ox=innerWidth/2, oy=80;
+  ctx.beginPath();
+  ctx.moveTo(ox+sx,oy+sy);
+  ctx.lineTo(ox+sx+TILE_W/2,oy+sy+TILE_H/2);
+  ctx.lineTo(ox+sx,oy+sy+TILE_H);
+  ctx.lineTo(ox+sx-TILE_W/2,oy+sy+TILE_H/2);
+  ctx.closePath(); ctx.globalAlpha=a; ctx.fillStyle=col; ctx.fill(); ctx.globalAlpha=1;
+}
+function draw(){
+  ctx.fillStyle="#07080c"; ctx.fillRect(0,0,innerWidth,innerHeight);
+  const conv=Math.max(0,(t-45)/25); const ring=8-conv*6;
+  for(let y=0;y<N;y++) for(let x=0;x<N;x++){
+    const d=Math.hypot(x-7.5,y-7.5);
+    const fog=d>4.2&&Math.hypot(x-gx,y-gy)>3.2;
+    let col= fog?"#10141c": ((x+y)%2?"#12202a":"#0e1a22");
+    if(conv>0 && d>ring) col="#2a0b12";
+    diamond(x,y,col);
+  }
+  diamond(extract.x,extract.y,"#e8c36a");
+  for(const L of loot) if(!L.got) diamond(L.x,L.y,"#22f0d4",0.85);
+  diamond(gx,gy,op.col);
+  document.getElementById("clock").textContent = extracted? "EXTRACTED": ("T+"+Math.floor(t));
+  document.getElementById("stats").textContent = `${op.name}  JUICE ${juice}  HEAT ${Math.floor(heat)}  ${extracted?"OUT":"IN GRID"}`;
+}
+let last=performance.now();
+function loop(now){tick((now-last)/1000); last=now; draw(); requestAnimationFrame(loop)}
+requestAnimationFrame(loop);
+</script>
+</body></html>
