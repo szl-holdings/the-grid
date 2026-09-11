@@ -1,11 +1,11 @@
-# Frontier wire
+# Frontier wire — 2026-09-11
 
-THE GRID lives here as source, and on Hugging Face as the play surface.
+Exhibit source: this repo.
+Chosen Space when founder HF_TOKEN exists: SZLHOLDINGS/the-grid :7860.
 
-- Play: https://huggingface.co/spaces/SZLHOLDINGS/the-grid (UNAVAILABLE until HF_TOKEN)
-- Pin: https://huggingface.co/spaces/betterwithage/the-grid
-- Tracker: https://github.com/szl-holdings/szl-hf-frontier
+Rejected hosts: a-11-oy.com, a11oy.net, org Pages CNAME.
+Rejected hijack: Space SZLHOLDINGS/szl-frontier (Memory Covenant).
 
-Rejected: a-11-oy.com, a11oy.net.
-
-No free OpenAI/HF key exists in this chat. Payload-01 needs your tokens.
+Estate frontier (separate program): github.com/szl-holdings/szl-hf-frontier
+Order: C3 kernel CI → C2 Khipu-abstain → C1 ReceiptAgent quarantine.
+L1–L3 stay OPEN. Metal BLOCKED_NO_METAL. winner=null.

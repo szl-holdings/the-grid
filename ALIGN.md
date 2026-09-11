@@ -1,13 +1,14 @@
 # ALIGN — THE GRID
 
-| Surface | ID | State |
-|---|---|---|
-| Founder HF profile | [huggingface.co/betterwithage](https://huggingface.co/betterwithage) | personal face |
-| Personal Space | [huggingface.co/spaces/betterwithage/the-grid](https://huggingface.co/spaces/betterwithage/the-grid) | create with HF_TOKEN |
-| Org Space | [huggingface.co/spaces/SZLHOLDINGS/the-grid](https://huggingface.co/spaces/SZLHOLDINGS/the-grid) | create with org write token |
-| GitHub org repo | [github.com/szl-holdings/the-grid](https://github.com/szl-holdings/the-grid) | LIVE source of record |
-| Frontier tracker | [szl-holdings/szl-hf-frontier](https://github.com/szl-holdings/szl-hf-frontier) | exhibit lane, not a model SKU |
+Measured 2026-09-11. Not a plan.
 
-Honest claim: playable isometric extraction demo. Not a kernel. Not a receipt. Not Λ.
+| Surface | State |
+|---|---|
+| github.com/szl-holdings/the-grid | LIVE source + play.html + python Dockerfile :7860 + payload01 |
+| play.html | LIVE 8-operator exhibit |
+| huggingface.co/spaces/SZLHOLDINGS/the-grid | DOES NOT EXIST |
+| huggingface.co/spaces/betterwithage/the-grid | DOES NOT EXIST |
+| a-11-oy.com/the-grid | 404 undeclared path refused |
+| a11oy.net/the-grid | 404 |
 
-Novelty: Convergence ring collapse + extract windows + 8 operators on a 16×16 lattice.
+Exhibit. Not a kernel. `winner=null`.
