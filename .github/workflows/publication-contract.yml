@@ -1,0 +1,45 @@
+name: Publication contract
+
+on:
+  pull_request:
+    paths:
+      - "scripts/payload01_align_push.py"
+      - "tests/test_payload01_align_push.py"
+      - "README.md"
+      - "PAYLOAD-01-ALIGN-PUSH.md"
+      - ".github/workflows/publication-contract.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "scripts/payload01_align_push.py"
+      - "tests/test_payload01_align_push.py"
+      - "README.md"
+      - "PAYLOAD-01-ALIGN-PUSH.md"
+      - ".github/workflows/publication-contract.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  publication-contract:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out exact source revision without third-party actions
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+            HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+          else
+            HEAD_SHA="${GITHUB_SHA}"
+          fi
+          git init .
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          git fetch --depth=1 origin "${HEAD_SHA}"
+          git checkout --detach FETCH_HEAD
+          test "$(git rev-parse HEAD)" = "${HEAD_SHA}"
+      - name: Compile publisher
+        run: python3 -m py_compile scripts/payload01_align_push.py
+      - name: Run publication-contract regressions
+        run: python3 -m unittest discover -s tests -p 'test_*.py' -v
