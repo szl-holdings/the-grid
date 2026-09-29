@@ -3,29 +3,20 @@
 **Id:** `SZL-GRID-CONVERGENCE-2026-09-04`
 **GitHub source authority:** `szl-holdings/the-grid`
 **Canonical provider projection:** `SZLHOLDINGS/the-grid`
+**State:** RETIRED 2026-09-29. Superseded by the committed workflow below.
 
-This publisher is founder-machine-only and fail-closed. It does **not** create a Hugging Face Space, does not mint credentials, and does not publish a second founder mirror. Target creation/access resolution is a separate provider-administration action.
+The founder-machine publisher `scripts/payload01_align_push.py` published `SZLHOLDINGS/the-grid` once (Hub commit `745dded6`, "Publish THE GRID from GitHub 06c7f8e5…", 2026-09-26). It is removed so the Space has exactly one writer. Its last version is in git history at `4978d68`.
 
-Before running, independently read the existing canonical Space and record its exact current Hub revision. Run only from the exact clean Git commit intended for publication.
+The only writer is now [`.github/workflows/hf-space.yml`](.github/workflows/hf-space.yml), which calls the org's reusable deployer (`szl-holdings/.github/.github/workflows/reusable-hf-deploy.yml`, pinned by commit SHA). The guarantees the local script gave are kept or tightened:
 
-```bash
-python3 -m pip install --user huggingface_hub
-export HF_TOKEN='set-locally-do-not-paste-into-chat'
-export THE_GRID_SOURCE_SHA="$(git rev-parse HEAD)"
-export HF_EXPECTED_PARENT_SHA='<current existing SZLHOLDINGS/the-grid revision>'
-python3 scripts/payload01_align_push.py
-```
+| Local script (retired) | Committed workflow |
+|---|---|
+| `HEAD` must equal `THE_GRID_SOURCE_SHA` and the tree must be clean | CI checks out `github.sha`; the deployer refuses unless it is the current tip of `main` at the moment of the Hub commit |
+| Hand-listed file set | File set derived from the `Dockerfile` `COPY` sources (plus `Dockerfile`, its ignore file and `README.md`) |
+| Expected-parent guard | One lock per asset (`hf-write/space/SZLHOLDINGS/the-grid`) and the default-branch-tip guard |
+| Readback: Hub `sha` equals the returned commit | Readback: the Space API reports that exact commit `RUNNING`, every published file matches by sha256 at that commit, and `/` and `/healthz` return HTTP 200 |
+| Fails when `HF_TOKEN` is unset | Fails when the `HF_TOKEN` repository secret is absent |
 
-The script refuses to write unless:
-
-- `HEAD` exactly equals `THE_GRID_SOURCE_SHA`;
-- the Git working tree is clean, including no untracked files;
-- every publication input is a tracked regular file, not a symlink;
-- the existing `SZLHOLDINGS/the-grid` Space is readable; and
-- its current Hub SHA exactly equals `HF_EXPECTED_PARENT_SHA`.
-
-The publication itself is one Hub commit guarded by the expected parent, followed by exact Hub revision readback. A successful provider write still does **not** establish Space runtime health, browser acceptance, product promotion, or proof-site qualification.
-
-If the canonical target is absent or unreadable, stop. Do not substitute `betterwithage/the-grid`, create a new target, or reinterpret organization membership as publication authority.
+Neither path creates a Space. A green deploy still does **not** establish browser acceptance, product promotion, or proof-site qualification.
 
 Demo exhibit. Not a kernel. Not a11oy. Not Λ.

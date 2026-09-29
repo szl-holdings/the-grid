@@ -1,0 +1,53 @@
+name: HF Space deploy
+
+# The single committed writer for the Hugging Face Space SZLHOLDINGS/the-grid.
+# It calls the org's reusable Dockerfile-derived deployer, which:
+#   - publishes exactly the Dockerfile COPY sources, the Dockerfile and the
+#     README card as one Hub commit whose title names this source commit;
+#   - reads the Space API back until it reports that exact Hub commit RUNNING
+#     (fails on BUILD_ERROR / CONFIG_ERROR / RUNTIME_ERROR);
+#   - re-fetches every published file at that Hub commit and compares sha256;
+#   - requires every smoke path below to return HTTP 200 with a body.
+# It fails closed when HF_TOKEN is not configured. It never runs on pull
+# requests; tests/test_space_contract.py and publication-contract.yml check
+# this file on every PR.
+
+"on":
+  push:
+    branches: [main]
+    # Every published input. tests/test_space_contract.py fails if a Dockerfile
+    # COPY source is missing here, so a new served file cannot skip deploy.
+    paths:
+      - Dockerfile
+      - Dockerfile.dockerignore
+      - .dockerignore
+      - play.html
+      - healthz
+      - README.md
+      - ALIGN.md
+      - .github/workflows/hf-space.yml
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+# One lock per Hub asset (hf-write/<type>/<owner>/<id>), never keyed by event.
+concurrency:
+  group: hf-write/space/SZLHOLDINGS/the-grid
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy exact source and attest live Space
+    uses: szl-holdings/.github/.github/workflows/reusable-hf-deploy.yml@1b3255219cd1d5fa7ac850195b18fc907cac2cbf
+    with:
+      hf-repo: SZLHOLDINGS/the-grid
+      ref: ${{ github.sha }}
+      require-default-branch-tip: true
+      dockerfile-path: Dockerfile
+      include-readme: true
+      prune: false
+      wait-running: 900
+      smoke-paths: '["/","/healthz"]'
+    secrets:
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}

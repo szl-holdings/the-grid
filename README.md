@@ -16,6 +16,8 @@ Isometric extraction protocol. Loot the lattice. Outrun the Convergence.
 
 **L4 exhibit. GitHub is source authority. Not a kernel. Not a11oy. Not Λ. `winner=null`.**
 
+Source: [github.com/szl-holdings/the-grid](https://github.com/szl-holdings/the-grid)
+
 Play source: [play.html](./play.html)
 
 The canonical provider projection is `SZLHOLDINGS/the-grid`. Provider existence, publication, runtime health, and browser acceptance are separate evidence lanes; this repository does not treat organization membership or a token as proof that any of them passed. Do not host this exhibit on `a-11-oy.com` or `a11oy.net`, and do not hijack an unrelated Space.
@@ -26,25 +28,17 @@ JACK IN → VESPER NYX QUILL RIVEN SABLE HELIX WRAITH AEGIS → loot cyan → Q/
 
 WASD · Q/E · R scan · F extract · Space overclock · C Convergence
 
-## Publication contract
+## Publication
 
-`scripts/payload01_align_push.py` is founder-machine-only and fail-closed. It **does not create a Space**. Before any provider write it requires:
+The Space `SZLHOLDINGS/the-grid` has one writer: [`.github/workflows/hf-space.yml`](https://github.com/szl-holdings/the-grid/blob/main/.github/workflows/hf-space.yml). On a push to `main` that changes a published input, or a manual dispatch from `main`, it calls the org's reusable deployer, which:
 
-1. an exact clean Git checkout whose `HEAD` equals `THE_GRID_SOURCE_SHA`;
-2. the existing canonical target `SZLHOLDINGS/the-grid` to be readable;
-3. `HF_EXPECTED_PARENT_SHA` to equal that target's current Hub revision; and
-4. an `HF_TOKEN` that can perform the already-authorized write.
+1. refuses to publish unless the checked-out commit is the current tip of `main`;
+2. publishes exactly the `Dockerfile` `COPY` sources, the `Dockerfile`, its build-context ignore file and this card as one Hub commit whose title names the source commit;
+3. waits until the Space API reports that exact Hub commit `RUNNING`, then re-fetches every published file at that commit and compares sha256; and
+4. requires `/` and `/healthz` to return HTTP 200 with a body.
 
-The publisher uploads the source-owned file set as one Hub commit with an expected-parent guard, then verifies provider readback. Product/runtime and proof-site promotion remain separate.
+It fails closed when the `HF_TOKEN` repository secret is absent, and it never creates a Space. `/healthz` is a static file served by the same `http.server` process: it shows the server answers, not browser acceptance, product promotion or proof-site qualification.
 
-```bash
-python3 -m pip install --user huggingface_hub
-export HF_TOKEN='set-locally-do-not-paste-into-chat'
-export THE_GRID_SOURCE_SHA="$(git rev-parse HEAD)"
-export HF_EXPECTED_PARENT_SHA='<current existing SZLHOLDINGS/the-grid revision>'
-python3 scripts/payload01_align_push.py
-```
-
-If the canonical Space does not exist or cannot be read, stop. Target creation/access resolution is a separate provider-administration action and is not performed by this script.
+The founder-machine publisher `scripts/payload01_align_push.py` is retired in favor of that workflow; its last version is in git history at `4978d68`.
 
 Apache-2.0.
