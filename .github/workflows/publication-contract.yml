@@ -1,29 +1,27 @@
 name: Publication contract
 
-on:
+# Read-only PR/main check for the Space writer. It never holds a credential and
+# never talks to a Hugging Face write API. It runs the repository contract tests
+# and a dry run of the exact reusable deployer revision that hf-space.yml pins,
+# so the deploy set is derived here the same way the real deploy derives it.
+
+"on":
   pull_request:
-    paths:
-      - "scripts/payload01_align_push.py"
-      - "tests/test_payload01_align_push.py"
-      - "README.md"
-      - "PAYLOAD-01-ALIGN-PUSH.md"
-      - ".github/workflows/publication-contract.yml"
   push:
     branches:
       - main
-    paths:
-      - "scripts/payload01_align_push.py"
-      - "tests/test_payload01_align_push.py"
-      - "README.md"
-      - "PAYLOAD-01-ALIGN-PUSH.md"
-      - ".github/workflows/publication-contract.yml"
 
 permissions:
   contents: read
 
+concurrency:
+  group: publication-contract-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
 jobs:
   publication-contract:
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - name: Check out exact source revision without third-party actions
         shell: bash
@@ -34,12 +32,68 @@ jobs:
           else
             HEAD_SHA="${GITHUB_SHA}"
           fi
-          git init .
+          git init -q .
           git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
-          git fetch --depth=1 origin "${HEAD_SHA}"
-          git checkout --detach FETCH_HEAD
+          git fetch -q --depth=1 origin "${HEAD_SHA}"
+          git checkout -q --detach FETCH_HEAD
           test "$(git rev-parse HEAD)" = "${HEAD_SHA}"
-      - name: Compile publisher
-        run: python3 -m py_compile scripts/payload01_align_push.py
-      - name: Run publication-contract regressions
-        run: python3 -m unittest discover -s tests -p 'test_*.py' -v
+          echo "HEAD_SHA=${HEAD_SHA}" >> "$GITHUB_ENV"
+
+      - name: Fetch the reusable deployer revision pinned by hf-space.yml
+        shell: bash
+        run: |
+          set -euo pipefail
+          PIN="$(grep -oE 'reusable-hf-deploy\.yml@[0-9a-f]{40}' .github/workflows/hf-space.yml | cut -d@ -f2)"
+          test "$(printf '%s\n' "$PIN" | grep -c .)" -eq 1
+          TOOLS="$RUNNER_TEMP/tools"
+          git init -q "$TOOLS"
+          git -C "$TOOLS" remote add origin "${GITHUB_SERVER_URL}/szl-holdings/.github.git"
+          git -C "$TOOLS" fetch -q --depth=1 origin "$PIN"
+          git -C "$TOOLS" checkout -q --detach FETCH_HEAD
+          test "$(git -C "$TOOLS" rev-parse HEAD)" = "$PIN"
+          echo "TOOLS=${TOOLS}" >> "$GITHUB_ENV"
+          echo "deployer pin: $PIN"
+
+      - name: Install the deployer's hash-locked closure (provides PyYAML)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/python" -I -P -m pip install -q \
+            --disable-pip-version-check --require-hashes --only-binary=:all: \
+            -r "$TOOLS/requirements/hf-publisher.lock"
+
+      - name: Run Space contract tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/venv/bin/python" -m unittest discover -s tests -p 'test_*.py' -v
+
+      - name: Dry-run the pinned deployer with hf-space.yml inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          SMOKE="$("$RUNNER_TEMP/venv/bin/python" -c 'import json, yaml; w = yaml.safe_load(open(".github/workflows/hf-space.yml")); print(w["jobs"]["deploy"]["with"]["smoke-paths"])')"
+          HF_REPO="$("$RUNNER_TEMP/venv/bin/python" -c 'import yaml; w = yaml.safe_load(open(".github/workflows/hf-space.yml")); print(w["jobs"]["deploy"]["with"]["hf-repo"])')"
+          python3 -I -P "$TOOLS/.github/scripts/hf_deploy_from_dockerfile.py" \
+            --dry-run \
+            --repo-root . \
+            --github-repo "$GITHUB_REPOSITORY" \
+            --hf-repo "$HF_REPO" \
+            --ref "$HEAD_SHA" \
+            --source-sha "$HEAD_SHA" \
+            --dockerfile-path Dockerfile \
+            --include-readme true \
+            --smoke-paths "$SMOKE" \
+            --manifest-out "$RUNNER_TEMP/hf-deploy-manifest.json"
+          python3 - "$RUNNER_TEMP/hf-deploy-manifest.json" <<'PY'
+          import json, sys
+          manifest = json.load(open(sys.argv[1]))
+          files = sorted(manifest["files"])
+          print("deploy set:", files)
+          assert manifest["unresolved_sources"] == [], manifest["unresolved_sources"]
+          for required in ("Dockerfile", "README.md", "healthz", "play.html"):
+              assert required in files, f"{required} missing from the derived deploy set"
+          assert "/healthz" in manifest["smoke_paths"], manifest["smoke_paths"]
+          PY
+
