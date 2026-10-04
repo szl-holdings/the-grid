@@ -1,0 +1,58 @@
+{
+  "_notice": "SPDX-License-Identifier: Apache-2.0; (c) 2026 SZL Holdings",
+  "schema": "szl.hf.space-card-presentation.v1",
+  "source_repository": "szl-holdings/the-grid",
+  "cards": [
+    {
+      "kind": "spaces",
+      "repo_id": "SZLHOLDINGS/the-grid",
+      "source_repository": "szl-holdings/the-grid",
+      "source_revision_before_presentation": "0cd569099660f5c5ef347e8d506fff793cbfefa1",
+      "source_path": "README.md",
+      "source_url": "https://github.com/szl-holdings/the-grid/blob/0cd569099660f5c5ef347e8d506fff793cbfefa1/README.md",
+      "presentation": {
+        "title": "The Grid \u00b7 Interactive Exhibit",
+        "summary": "Play an isometric extraction game: explore the grid, collect resources and escape before convergence.",
+        "artifact_type": "Browser game served by a Docker Space",
+        "stage": "L4 exhibit \u00b7 software",
+        "visible_limits": [
+          "Game mechanics and in-world language belong to this exhibit; they do not establish a kernel result or a qualified A11oy product.",
+          "The static health endpoint confirms server liveness only. Browser acceptance and publication evidence remain separate.",
+          "The exhibit retains winner=null, its own source namespace and its existing publication checks. No model capability or \u039b result is claimed."
+        ],
+        "kind": "spaces",
+        "repo_id": "SZLHOLDINGS/the-grid",
+        "build_url": "https://github.com/szl-holdings/the-grid",
+        "evidence_url": "https://github.com/szl-holdings/the-grid/blob/0cd569099660f5c5ef347e8d506fff793cbfefa1/README.md"
+      },
+      "before_sha256": "2aa1c6100888cbbacaf4a3d071e50b84903030490c0ac04082d58a76fad77f83",
+      "after_sha256": "60a44977d2b1991a86a3a531ea8b725cdb240a489ab23f90ad60211a670675dd",
+      "front_matter_sha256": "52dda54f64fb477fae339cf18a221958e547a7418eb7f8a81c084286470e357b",
+      "preserved_body_sha256": "f613a5d2a576fa643ed6b278bd3e1b59206c134894edbae6e4848613dc051bf3",
+      "bytes_before": 2295,
+      "bytes_after": 3753,
+      "front_matter_preserved": true,
+      "original_body_preserved": true,
+      "hub_observation": {
+        "hub_revision": "9a094766b514568fc42e65d036fc70f79976c5e1",
+        "source_url": "https://huggingface.co/spaces/SZLHOLDINGS/the-grid/resolve/9a094766b514568fc42e65d036fc70f79976c5e1/README.md",
+        "observed_at": "2026-10-04T16:11:35.175484+00:00",
+        "sha256": "2aa1c6100888cbbacaf4a3d071e50b84903030490c0ac04082d58a76fad77f83",
+        "bytes": 2295,
+        "state": "EXACT_PUBLIC_CARD"
+      },
+      "source_body_equals_dated_hub_body": true,
+      "publisher_repository": "szl-holdings/the-grid",
+      "publisher_workflow": ".github/workflows/hf-space.yml",
+      "publisher_workflow_source_url": "https://github.com/szl-holdings/the-grid/blob/0cd569099660f5c5ef347e8d506fff793cbfefa1/.github/workflows/hf-space.yml",
+      "publisher_reusable": "szl-holdings/.github/.github/workflows/reusable-hf-deploy.yml@1b3255219cd1d5fa7ac850195b18fc907cac2cbf",
+      "publisher_readme_mapping": "Root README.md included by include-readme:true in the existing Dockerfile-derived target payload",
+      "publication_trigger": "MAIN_PUSH_CHANGING_PUBLISHED_INPUT_OR_EXISTING_WORKFLOW_DISPATCH",
+      "publication_state_at_preparation": "SOURCE_CANDIDATE_ONLY_NO_HUB_EVENT_BY_THIS_LANE",
+      "publication_boundary": "The existing writer binds current main, publishes its complete Dockerfile-derived payload, verifies immutable bytes and runtime smoke checks. This card change does not add a writer, alter its authentication, restore a missing Hub-parent CAS guard, or claim runtime/model qualification.",
+      "writer_or_workflow_changed": false,
+      "runtime_or_artifact_code_changed": false,
+      "central_apply_allowed": false
+    }
+  ]
+}
