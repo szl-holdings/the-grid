@@ -10,6 +10,29 @@ license: apache-2.0
 short_description: Isometric extraction protocol. Survive the Convergence.
 ---
 
+<p><a href="https://huggingface.co/spaces/SZLHOLDINGS/szl-command-lab"><img src="https://raw.githubusercontent.com/szl-holdings/.github/main/profile/assets/szl/logos/szl_mark_holographic.svg" alt="SZL Holdings" width="112" /></a></p>
+
+# The Grid · Interactive Exhibit
+
+Play an isometric extraction game: explore the grid, collect resources and escape before convergence.
+
+**Artifact:** Browser game served by a Docker Space · **Stage:** L4 exhibit · software
+
+[Explore in Command Lab](https://huggingface.co/spaces/SZLHOLDINGS/szl-command-lab) · [Build](https://github.com/szl-holdings/the-grid) · [Evidence](https://github.com/szl-holdings/the-grid/blob/0cd569099660f5c5ef347e8d506fff793cbfefa1/README.md)
+
+## Before you use it
+
+- Game mechanics and in-world language belong to this exhibit; they do not establish a kernel result or a qualified A11oy product.
+- The static health endpoint confirms server liveness only. Browser acceptance and publication evidence remain separate.
+- The exhibit retains winner=null, its own source namespace and its existing publication checks. No model capability or Λ result is claimed.
+
+<details>
+<summary>Technical details and original evidence</summary>
+
+The retained source below is exact and may contain historical observations. Its dates, use restrictions, licenses and evidence boundaries continue to apply.
+
+<!-- SZL-PRESERVED-TECHNICAL-BODY:START -->
+
 # THE GRID
 
 Isometric extraction protocol. Loot the lattice. Outrun the Convergence.
@@ -42,3 +65,7 @@ It fails closed when the `HF_TOKEN` repository secret is absent, and it never cr
 The founder-machine publisher `scripts/payload01_align_push.py` is retired in favor of that workflow; its last version is in git history at `4978d68`.
 
 Apache-2.0.
+
+<!-- SZL-PRESERVED-TECHNICAL-BODY:END -->
+
+</details>
