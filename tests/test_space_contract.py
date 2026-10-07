@@ -172,8 +172,31 @@ class DeployWorkflowContract(unittest.TestCase):
         self.assertEqual(triggers["push"]["branches"], ["main"])
 
     def test_single_declared_credential(self) -> None:
-        self.assertEqual(self.job["secrets"], {"HF_TOKEN": "${{ secrets.HF_TOKEN }}"})
+        # The deployer receives exactly one credential: the first candidate the
+        # credential job proved can write (organization HF_ORG_TOKEN, else the
+        # repository HF_TOKEN that would otherwise shadow the organization one).
+        self.assertEqual(
+            self.job["secrets"],
+            {"HF_TOKEN": "${{ needs.credential.outputs.pick == 'HF_ORG_TOKEN' "
+                         "&& secrets.HF_ORG_TOKEN || secrets.HF_TOKEN }}"},
+        )
+        self.assertEqual(self.job["needs"], "credential")
         self.assertEqual(self.wf["permissions"], {"contents": "read"})
+
+    def test_credential_job_only_reads_whoami(self) -> None:
+        cred = self.wf["jobs"]["credential"]
+        self.assertNotIn("permissions", cred)  # inherits contents: read
+        (step,) = cred["steps"]
+        self.assertEqual(set(step["env"]) - {"HUB_ORG"}, {"CANDIDATE_HF_ORG_TOKEN", "CANDIDATE_HF_TOKEN"})
+        script = step["run"]
+        self.assertIn("https://huggingface.co/api/whoami-v2", script)
+        self.assertNotRegex(script, HUB_WRITE_CALL)
+        # Candidates are tried organization-first and the job fails closed.
+        self.assertLess(script.index('"HF_ORG_TOKEN"'), script.index('"HF_TOKEN")'))
+        self.assertIn("raise SystemExit", script)
+        # The summary records validity and kind, never the credential value.
+        self.assertNotIn("print(token", script)
+        self.assertNotIn("{token}\"", script.replace('f"Bearer {token}"', ""))
 
     def test_push_paths_cover_every_published_input(self) -> None:
         paths = set(self.wf["on"]["push"]["paths"])

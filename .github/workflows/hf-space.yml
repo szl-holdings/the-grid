@@ -8,9 +8,16 @@ name: HF Space deploy
 #     (fails on BUILD_ERROR / CONFIG_ERROR / RUNTIME_ERROR);
 #   - re-fetches every published file at that Hub commit and compares sha256;
 #   - requires every smoke path below to return HTTP 200 with a body.
-# It fails closed when HF_TOKEN is not configured. It never runs on pull
-# requests; tests/test_space_contract.py and publication-contract.yml check
-# this file on every PR.
+# It never runs on pull requests; tests/test_space_contract.py and
+# publication-contract.yml check this file on every PR.
+#
+# Credential selection: a repository secret silently shadows the organization
+# secret of the same name, and a stale repository HF_TOKEN made every deploy
+# fail with HTTP 401 from 2026-10-04. The credential job asks the Hub whoami
+# endpoint about each candidate (organization HF_ORG_TOKEN first, then
+# HF_TOKEN), records only its validity, token kind and expiry in the job
+# summary, and hands the deployer the first candidate that can write. It fails
+# closed, naming the secrets to rotate, when none can.
 
 "on":
   push:
@@ -37,8 +44,68 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  credential:
+    name: Select a Hub credential that can write
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      pick: ${{ steps.select.outputs.pick }}
+    steps:
+      - id: select
+        env:
+          CANDIDATE_HF_ORG_TOKEN: ${{ secrets.HF_ORG_TOKEN }}
+          CANDIDATE_HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HUB_ORG: SZLHOLDINGS
+        shell: python
+        run: |
+          import json, os, urllib.error, urllib.request
+
+          org = os.environ["HUB_ORG"]
+          rows, pick = [], ""
+          for name in ("HF_ORG_TOKEN", "HF_TOKEN"):
+              token = os.environ.get(f"CANDIDATE_{name}", "")
+              row = {"secret": name, "present": bool(token)}
+              if token:
+                  req = urllib.request.Request(
+                      "https://huggingface.co/api/whoami-v2",
+                      headers={"Authorization": f"Bearer {token}"})
+                  try:
+                      with urllib.request.urlopen(req, timeout=30) as resp:
+                          who = json.load(resp)
+                      auth = who.get("auth") or {}
+                      access = auth.get("accessToken") or {}
+                      kind = access.get("role") or auth.get("type") or "unknown"
+                      member = next((o for o in who.get("orgs") or [] if o.get("name") == org), {})
+                      scoped = (access.get("fineGrained") or {}).get("scoped") or []
+                      if kind == "fineGrained":
+                          can_write = any(
+                              (s.get("entity") or {}).get("name", "").split("/")[0] == org
+                              and any(p.endswith(".write") for p in s.get("permissions") or [])
+                              for s in scoped)
+                      else:
+                          can_write = kind != "read" and member.get("roleInOrg") in {"admin", "write", "contributor"}
+                      row.update(valid=True, kind=kind, expires=auth.get("expiresAt"), can_write=can_write)
+                  except urllib.error.HTTPError as err:
+                      row.update(valid=False, http=err.code)
+                  except OSError as err:
+                      row.update(valid=False, error=type(err).__name__)
+              rows.append(row)
+              if not pick and row.get("can_write"):
+                  pick = name
+
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write("### Hub credential census\n\n| secret | present | valid | kind | can write | expires |\n|---|---|---|---|---|---|\n")
+              for r in rows:
+                  summary.write(f"| {r['secret']} | {r['present']} | {r.get('valid', '-')} | {r.get('kind', r.get('http', '-'))} | {r.get('can_write', '-')} | {r.get('expires') or '-'} |\n")
+          print(json.dumps(rows))
+          if not pick:
+              raise SystemExit(f"No candidate secret can write to {org}; rotate HF_ORG_TOKEN (organization) or HF_TOKEN (repository).")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+              out.write(f"pick={pick}\n")
+
   deploy:
     name: Deploy exact source and attest live Space
+    needs: credential
     uses: szl-holdings/.github/.github/workflows/reusable-hf-deploy.yml@1b3255219cd1d5fa7ac850195b18fc907cac2cbf
     with:
       hf-repo: SZLHOLDINGS/the-grid
@@ -50,4 +117,4 @@ jobs:
       wait-running: 900
       smoke-paths: '["/","/healthz"]'
     secrets:
-      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      HF_TOKEN: ${{ needs.credential.outputs.pick == 'HF_ORG_TOKEN' && secrets.HF_ORG_TOKEN || secrets.HF_TOKEN }}
