@@ -3,56 +3,104 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>THE GRID — L4 exhibit</title>
+<meta name="theme-color" content="#080b12"/>
+<meta name="description" content="The Grid: a local, playable L4 exhibit. Choose an operator, explore a 16×16 lattice and reach an extraction window. No kernel or receipt authority."/>
+<title>The Grid · SZL L4 exhibit</title>
+<!-- Native KANCHAY palette projection: szl-brand@27d12e77fc0f9f1a0e5fae8b34adf2380d51d070.
+     Exact small Orbit suite SVG SHA-256: 6e2b7d72a3af3d9602b79de41df0194ede6496a9661f057108ec224c0efc92e6.
+     Brand artwork CC BY 4.0; code remains Apache-2.0. No external fonts, scripts or gameplay services. -->
 <style>
-  :root{--cyan:#22f0d4;--gold:#e8c36a;--bg:#07080c;--muted:#7a8494;--red:#ff4d6d}
-  html,body{margin:0;height:100%;background:var(--bg);color:#e8f6f2;font-family:Rajdhani,Segoe UI,sans-serif;overflow:hidden}
-  canvas{display:block;width:100%;height:100%}
-  #hud{position:fixed;inset:0;pointer-events:none;display:flex;flex-direction:column;justify-content:space-between;padding:16px 20px}
-  .row{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
-  .tag{font-family:Orbitron,monospace;letter-spacing:.28em;font-size:10px;color:var(--cyan)}
-  .muted{color:var(--muted);font-size:12px}
-  .gold{color:var(--gold)}
-  .warn{color:var(--red)}
-  #boot{position:fixed;inset:0;background:#05060a;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;z-index:2}
-  #boot h1{font-family:Orbitron,sans-serif;letter-spacing:.42em;color:var(--cyan);margin:0;font-size:30px}
-  .ops{display:grid;grid-template-columns:repeat(4,minmax(120px,1fr));gap:8px;max-width:640px}
-  button.op{pointer-events:auto;background:transparent;border:1px solid var(--cyan);color:var(--cyan);padding:8px 10px;cursor:pointer;letter-spacing:.16em;font-family:Rajdhani,sans-serif}
-  button.op:hover{background:#22f0d422}
-  #end{display:none;position:fixed;inset:0;background:#05060acc;align-items:center;justify-content:center;flex-direction:column;gap:12px;z-index:3}
-  #end.show{display:flex}
-  button.op.ghost{border-color:#7a8494;color:#c9d4de}
+  :root{color-scheme:dark;--bg:#080b12;--surface:#111722;--raised:#182232;--edge:#71829b;--text:#f1f4f8;--muted:#aab7c9;--cyan:#8fd9d5;--gold:#e8c36a;--red:#ff8297;--focus:#5cc4bf}
+  *{box-sizing:border-box} [hidden]{display:none!important}
+  html,body{margin:0;width:100%;height:100%;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;overflow:hidden}
+  button,a{touch-action:manipulation} button{font:inherit;cursor:pointer} a{color:var(--cyan);text-underline-offset:4px}
+  :focus-visible{outline:3px solid var(--focus);outline-offset:4px} button:disabled{cursor:default}
+  #c{display:block;width:100%;height:100%;outline-offset:-4px}
+  .sr-only{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+  .tag{font:600 11px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace;letter-spacing:.13em;color:var(--cyan)}
+  .muted{color:var(--muted);font-size:13px} .gold{color:var(--gold)} .warn{color:var(--red)}
+  .identity{display:flex;gap:14px;align-items:center;flex-wrap:wrap}.identity svg{width:40px;height:40px;flex:none}
+  .identity p{margin:0}.identity strong{letter-spacing:.1em;font-size:13px}
+  .foil{border:1px solid var(--edge);border-top-color:#b7c7d8;background:var(--surface);border-radius:20px;box-shadow:0 20px 80px #0005}
+  #boot,#end{position:fixed;inset:0;z-index:3;overflow:auto;overscroll-behavior:contain;background:radial-gradient(ellipse at 80% 0,#143638 0,transparent 55%),var(--bg);padding:clamp(16px,4vw,48px);display:grid;align-items:center;justify-items:center}
+  .entry{width:min(100%,760px);padding:clamp(20px,4vw,40px)}
+  .entry h1{font:500 clamp(34px,7vw,64px)/1.08 Georgia,"Times New Roman",serif;letter-spacing:-.035em;margin:24px 0 16px}
+  .entry .lead{font-size:17px;max-width:56ch;margin:0 0 12px}.entry .scope{border-left:2px solid var(--cyan);padding:0 0 0 14px;margin:18px 0;color:var(--muted);font-size:13px}
+  .ops{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:24px 0 18px}
+  button.op,.control{min-height:44px;min-width:44px;border:1px solid var(--edge);border-radius:10px;background:var(--raised);color:var(--text);padding:10px 12px;font-size:12px;font-weight:650;letter-spacing:.035em}
+  button.op{text-align:left;overflow-wrap:anywhere}.op span{display:block;font-size:10px;letter-spacing:.12em;color:var(--muted);margin-bottom:4px}
+  button.op:hover,.control:hover{border-color:var(--cyan);background:#20323f}.control:active,.control[aria-pressed="true"]{background:#20413f;border-color:var(--cyan)}
+  details{border-top:1px solid #2b3749;padding-top:8px} summary{min-height:44px;cursor:pointer;display:list-item;align-content:center;padding:10px 0;color:var(--cyan)}
+  .help{font-size:13px;color:var(--muted)}.help p{margin:8px 0}.help kbd{font:inherit;color:var(--text)}
+  .credits{font-size:11px;color:var(--muted);margin-top:18px;display:flex;flex-wrap:wrap;gap:4px 16px}.credits a{min-height:44px;display:inline-flex;align-items:center}
+  #hud{position:fixed;inset:0;pointer-events:none;display:flex;flex-direction:column;justify-content:space-between;padding:12px;gap:12px}
+  #hud-top{display:flex;justify-content:space-between;gap:12px;align-items:center;background:var(--surface);border:1px solid #2b3749;border-radius:12px;padding:10px 14px}
+  #hud-top .muted{font-size:11px;max-width:70ch} #clock{white-space:nowrap;font:600 18px/1.4 ui-monospace,monospace}
+  #hud-bottom{width:min(100%,840px);align-self:center;background:var(--surface);border:1px solid #2b3749;border-top-color:#8aabae;border-radius:16px;padding:12px;pointer-events:auto}
+  #stats{font:12px/1.7 ui-monospace,monospace;color:var(--text);overflow-wrap:anywhere}
+  .controlbar{display:flex;gap:12px;margin-top:10px;align-items:center;justify-content:space-between}
+  .move{display:grid;grid-template-columns:repeat(3,44px);gap:4px;flex:none}.move [data-key="w"]{grid-column:2}.move [data-key="a"]{grid-column:1;grid-row:2}.move [data-key="s"]{grid-column:2;grid-row:2}.move [data-key="d"]{grid-column:3;grid-row:2}
+  .move .control{padding:6px;font-size:18px}.actions{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end}.actions .control{font-size:11px;padding:8px 10px}
+  #game-state{margin:0;font-size:12px;color:var(--cyan);min-height:18px}.keyboard-hint{font-size:11px;color:var(--muted);margin:8px 0 0}
+  #end .entry{max-width:480px}#endtitle{font-size:40px}#again{margin-top:20px} #endstats{font-family:ui-monospace,monospace}
+  @media(max-width:600px){.ops{grid-template-columns:repeat(2,minmax(0,1fr))}.controlbar{align-items:end;gap:8px}.actions{max-width:220px}.keyboard-hint{display:none}#hud-top{align-items:flex-start;padding:8px 10px}#hud-top .tag{font-size:10px;letter-spacing:.07em}#hud-top .muted{font-size:10px}#clock{font-size:16px}.controlbar .actions .control{padding:6px 8px}#hud-bottom{padding:10px}.entry h1{margin-top:20px}}
+  @media(max-width:360px){.controlbar{align-items:center;flex-direction:column}.actions{max-width:none;justify-content:center;width:100%}.move{grid-template-columns:repeat(3,44px)}#hud-top .muted{max-width:30ch}.entry{padding:20px}}
+  @media(max-height:540px) and (min-width:601px){#hud-top .muted,.keyboard-hint{display:none}.move{grid-template-columns:repeat(4,44px)}.move [data-key]{grid-column:auto;grid-row:auto}.controlbar{margin-top:4px}#hud-bottom{padding:6px 12px}.entry{padding:20px}}
+  @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation:none!important;transition:none!important}}
+  @media(forced-colors:active){#boot,#end,#hud-top,#hud-bottom,.entry{background:Canvas;color:CanvasText;box-shadow:none;border-color:CanvasText}.control,button.op{background:ButtonFace;color:ButtonText;border-color:ButtonText}.control:active,.control[aria-pressed="true"]{border-color:Highlight}.tag,.muted,.help,.scope,.credits,#stats,#game-state,.gold,.warn{color:CanvasText}a{color:LinkText}:focus-visible{outline:3px solid Highlight}.identity svg{forced-color-adjust:none}}
 </style>
-<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600&family=Rajdhani:wght@500;700&display=swap" rel="stylesheet">
 </head>
 <body>
-<canvas id="c"></canvas>
-<div id="hud">
-  <div class="row">
-    <div>
-      <div class="tag">SZL HOLDINGS · BETTERWITHAGE · L4 EXHIBIT</div>
-      <div class="muted">Not a kernel. Not a receipt. Not a11oy. winner=null. Metal BLOCKED_NO_METAL.</div>
-    </div>
+<main aria-label="The Grid local exhibit">
+<canvas id="c" tabindex="-1" aria-label="Interactive isometric lattice" aria-describedby="canvas-help"></canvas>
+<p id="canvas-help" class="sr-only">A visual local game. Focus this canvas for W A S D movement; Q and E change tool, R scans, F extracts, Space overclocks, and C starts Convergence early. Escape pauses. Touch controls are below. The canvas does not provide a nonvisual equivalent of the lattice.</p>
+<div id="hud" hidden>
+  <div id="hud-top">
+    <div><div class="tag">THE GRID · SZL L4 EXHIBIT</div><div class="muted">Not a kernel. Not a receipt. Not a11oy. winner=null. Metal BLOCKED_NO_METAL.</div></div>
     <div class="gold" id="clock">T+0</div>
   </div>
-  <div class="row">
-    <div id="stats" class="muted">JACK IN</div>
-    <div class="muted">WASD move · Q/E tool · R scan · F extract · Space overclock</div>
+  <div id="hud-bottom">
+    <div id="stats">CHOOSE AN OPERATOR</div>
+    <p id="game-state" role="status">Ready to deploy.</p>
+    <div class="controlbar">
+      <div class="move" role="group" aria-label="Movement: hold a direction">
+        <button type="button" class="control" data-key="w" aria-label="Move up">↑</button>
+        <button type="button" class="control" data-key="a" aria-label="Move left">←</button>
+        <button type="button" class="control" data-key="s" aria-label="Move down">↓</button>
+        <button type="button" class="control" data-key="d" aria-label="Move right">→</button>
+      </div>
+      <div class="actions" role="group" aria-label="Operator controls">
+        <button type="button" class="control" data-action="q" aria-label="Previous tool">Tool −</button>
+        <button type="button" class="control" data-action="e" aria-label="Next tool">Tool +</button>
+        <button type="button" class="control" data-action="r">Scan</button>
+        <button type="button" class="control" data-key="f" aria-label="Hold to extract">Extract</button>
+        <button type="button" class="control" data-key=" " aria-label="Hold to overclock">Overclock</button>
+        <button type="button" class="control" id="pause" aria-pressed="false">Pause</button>
+      </div>
+    </div>
+    <p class="keyboard-hint">Canvas keys: WASD move · Q/E tool · R scan · F extract · Space overclock · C Convergence · Esc pause</p>
   </div>
 </div>
-<div id="boot">
-  <div class="tag">FRONTIER EXHIBIT · RECONSTRUCTION</div>
-  <h1>THE GRID</h1>
-  <div class="muted">16×16 lattice · eight operators · Convergence ring · extract windows</div>
-  <div class="muted">Original Vite src/game never landed in this tree. This file is the playable source of record.</div>
-  <div class="ops" id="opgrid"></div>
-</div>
-<div id="end">
-  <div class="tag" id="endtag">EXTRACT</div>
-  <h1 id="endtitle" style="font-family:Orbitron,sans-serif;letter-spacing:.3em;color:var(--gold);margin:0;font-size:22px">OUT</h1>
-  <div class="muted" id="endstats"></div>
-  <button class="op ghost" id="again">JACK IN AGAIN</button>
-</div>
+<section id="boot" aria-labelledby="entry-title">
+  <div class="entry foil">
+    <div class="identity"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 600" role="img" aria-labelledby="szl-icon-32-title szl-icon-32-desc"><title id="szl-icon-32-title">SZL Holdings</title><desc id="szl-icon-32-desc">SZL letters, one orbit and the coral node, for placements of 24 to 48 pixels.</desc><rect width="600" height="600" rx="120" fill="#030F29"/><ellipse cx="300" cy="300" rx="262" ry="122" fill="none" stroke="#9AA7BD" stroke-width="22" transform="rotate(-22 300 300)"/><g transform="translate(300 300) scale(1.2) translate(-299.8 -299.1)"><g fill="#030F29" stroke="#030F29" stroke-width="18.33" stroke-linejoin="round"><path d="M228.256 331.049Q228.256 353.967 211.26 366.091Q194.265 378.214 161.383 378.214Q131.378 378.214 114.328 367.586Q97.278 356.957 92.406 335.367L123.96 330.163Q127.171 342.564 136.471 348.155Q145.771 353.746 162.268 353.746Q196.48 353.746 196.48 332.931Q196.48 326.288 192.549 321.97Q188.619 317.652 181.478 314.774Q174.336 311.895 154.075 307.798Q136.582 303.702 129.718 301.211Q122.853 298.72 117.317 295.343Q111.781 291.966 107.906 287.205Q104.031 282.444 101.872 276.023Q99.713 269.601 99.713 261.297Q99.713 240.15 115.601 228.913Q131.489 217.675 161.825 217.675Q190.833 217.675 205.392 226.754Q219.952 235.833 224.159 256.758L192.494 261.076Q190.058 251.001 182.585 245.908Q175.111 240.815 161.161 240.815Q131.489 240.815 131.489 259.415Q131.489 265.505 134.644 269.38Q137.8 273.255 144 275.967Q150.2 278.68 169.133 282.776Q191.608 287.537 201.296 291.578Q210.984 295.62 216.63 300.989Q222.277 306.359 225.266 313.833Q228.256 321.306 228.256 331.049Z"/><path d="M369.087 376H243.867V352.86L328.233 245.576H252.281V220H364.548V242.697L280.182 350.424H369.087Z"/><path d="M390.788 376V220H423.449V350.757H507.151V376Z"/></g><g fill="#FFFFFF"><path d="M228.256 331.049Q228.256 353.967 211.26 366.091Q194.265 378.214 161.383 378.214Q131.378 378.214 114.328 367.586Q97.278 356.957 92.406 335.367L123.96 330.163Q127.171 342.564 136.471 348.155Q145.771 353.746 162.268 353.746Q196.48 353.746 196.48 332.931Q196.48 326.288 192.549 321.97Q188.619 317.652 181.478 314.774Q174.336 311.895 154.075 307.798Q136.582 303.702 129.718 301.211Q122.853 298.72 117.317 295.343Q111.781 291.966 107.906 287.205Q104.031 282.444 101.872 276.023Q99.713 269.601 99.713 261.297Q99.713 240.15 115.601 228.913Q131.489 217.675 161.825 217.675Q190.833 217.675 205.392 226.754Q219.952 235.833 224.159 256.758L192.494 261.076Q190.058 251.001 182.585 245.908Q175.111 240.815 161.161 240.815Q131.489 240.815 131.489 259.415Q131.489 265.505 134.644 269.38Q137.8 273.255 144 275.967Q150.2 278.68 169.133 282.776Q191.608 287.537 201.296 291.578Q210.984 295.62 216.63 300.989Q222.277 306.359 225.266 313.833Q228.256 321.306 228.256 331.049Z"/><path d="M369.087 376H243.867V352.86L328.233 245.576H252.281V220H364.548V242.697L280.182 350.424H369.087Z"/><path d="M390.788 376V220H423.449V350.757H507.151V376Z"/></g></g><circle cx="373.69" cy="154.05" r="30" fill="#DF735F"/></svg><div><strong>SZL HOLDINGS</strong><p class="tag">BETTERWITHAGE · L4 EXHIBIT</p></div></div>
+    <h1 id="entry-title">The Grid.</h1>
+    <p class="lead">Eight operators. One lattice.<br>Make the extraction window.</p>
+    <p class="muted">A 16×16 local playable exhibit with a Convergence ring, operator tools and extraction windows. Choose an operator to begin.</p>
+    <p class="scope">Not a kernel. Not a receipt. Not a11oy. <code>winner=null</code>. Metal <code>BLOCKED_NO_METAL</code>. This exhibit carries no runtime or scientific authority.</p>
+    <div class="ops" id="opgrid" role="group" aria-label="Choose one of eight operators"></div>
+    <details><summary>Controls and exhibit limits</summary><div class="help">
+      <p>Move with <kbd>W A S D</kbd>, change tool with <kbd>Q / E</kbd>, scan with <kbd>R</kbd>, hold <kbd>F</kbd> to extract, and hold <kbd>Space</kbd> to overclock. <kbd>C</kbd> starts Convergence early. Focus the lattice to use keyboard controls; <kbd>Esc</kbd> pauses. On-screen controls support touch or keyboard.</p>
+      <p>Collect at least 20 juice, select EXTRACTOR and reach an open gold window to extract. The run pauses when this tab loses focus. Best score and run count are stored only in this browser when storage is available.</p>
+      <p>The lattice is a visual canvas; the text HUD and controls do not provide a complete nonvisual version of the game. Original Vite src/game never landed in this tree. This file is the playable source of record.</p>
+    </div></details>
+    <div class="credits"><a href="https://github.com/szl-holdings/the-grid">Exhibit source</a><a href="https://github.com/szl-holdings/szl-brand/tree/27d12e77fc0f9f1a0e5fae8b34adf2380d51d070/kit/logos/orbit-v2">SZL Orbit artwork · CC BY 4.0</a><a href="https://creativecommons.org/licenses/by/4.0/">Artwork license</a></div>
+  </div>
+</section>
+<section id="end" aria-labelledby="endtitle" hidden>
+  <div class="entry foil"><div class="tag" id="endtag">EXTRACT</div><h1 id="endtitle">OUT</h1><div class="muted" id="endstats"></div><p class="muted" id="storage-note">Scores stay in this browser.</p><button class="op" id="again" type="button">Choose another operator</button></div>
+</section>
+</main>
 <script>
 const N=16, TILE_W=54, TILE_H=27;
 const TOOLS=["SCANNER","EXTRACTOR","DAMPER"];
@@ -68,11 +116,12 @@ const OPS={
 };
 const LS_KEY="szl.the-grid.exhibit.v1";
 function loadMem(){try{return JSON.parse(localStorage.getItem(LS_KEY)||"{}")}catch(e){return {}}}
-function saveMem(p){localStorage.setItem(LS_KEY,JSON.stringify(p))}
+let storageAvailable=true;
+function saveMem(p){try{localStorage.setItem(LS_KEY,JSON.stringify(p))}catch(e){storageAvailable=false}}
 const mem=Object.assign({best:0,runs:0,last:"vesper"},loadMem());
 
 let op=OPS.vesper, gx=2, gy=13, juice=0, heat=0, t=0, running=false, extracted=false, burned=false;
-let tool=0, scanPulse=0, convOn=false;
+let tool=0, scanPulse=0, convOn=false, paused=false;
 const loot=[], windows=[];
 
 function seed(){
@@ -85,55 +134,112 @@ seed();
 const grid=document.getElementById("opgrid");
 Object.keys(OPS).forEach(k=>{
   const b=document.createElement("button");
-  b.className="op"; b.textContent="DEPLOY "+OPS[k].name; b.dataset.op=k;
+  b.type="button"; b.className="op"; b.dataset.op=k;
+  const label=document.createElement("span"); label.textContent="DEPLOY"; b.append(label,OPS[k].name);
   b.onclick=()=>deploy(k);
   grid.appendChild(b);
 });
 document.getElementById("again").onclick=()=>{
-  document.getElementById("end").classList.remove("show");
-  document.getElementById("boot").style.display="flex";
+  document.getElementById("end").hidden=true;
+  document.getElementById("hud").hidden=true;
+  document.getElementById("boot").hidden=false;
+  c.tabIndex=-1;
+  (grid.querySelector(`[data-op="${mem.last}"]`)||grid.querySelector("button")).focus();
 };
 
 function deploy(key){
   op=OPS[key]||OPS.vesper;
   gx=2; gy=13; juice=0; heat=0; t=0; extracted=false; burned=false; tool=0; scanPulse=0; convOn=false;
-  seed(); running=true;
+  seed(); running=true; paused=false; clearKeys();
   mem.last=key; mem.runs=(mem.runs||0)+1; saveMem(mem);
-  document.getElementById("boot").style.display="none";
+  document.getElementById("boot").hidden=true;
+  document.getElementById("hud").hidden=false;
+  document.getElementById("hud-bottom").inert=false;
+  document.getElementById("pause").textContent="Pause";
+  document.getElementById("pause").setAttribute("aria-pressed","false");
+  document.getElementById("game-state").textContent="Run active. Escape or Pause stops the local clock.";
+  c.tabIndex=0; c.focus(); resize();
 }
 
 function iso(x,y){return [(x-y)*TILE_W/2,(x+y)*TILE_H/2]}
 const c=document.getElementById("c"), ctx=c.getContext("2d");
-function resize(){c.width=innerWidth*devicePixelRatio;c.height=innerHeight*devicePixelRatio;ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0)}
+let projection={scale:1,x:innerWidth/2,y:56};
+function resize(){
+  c.width=innerWidth*devicePixelRatio; c.height=innerHeight*devicePixelRatio;
+  ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);
+  const hud=document.getElementById("hud");
+  const top=hud.hidden?16:document.getElementById("hud-top").getBoundingClientRect().bottom+12;
+  const bottom=hud.hidden?innerHeight-16:document.getElementById("hud-bottom").getBoundingClientRect().top-12;
+  const available=Math.max(24,bottom-top);
+  const scale=Math.max(.05,Math.min(1,(innerWidth-24)/(N*TILE_W),available/(N*TILE_H)));
+  projection={scale,x:innerWidth/2,y:top+(available-N*TILE_H*scale)/2};
+  draw();
+}
 resize(); addEventListener("resize",resize);
 const keys={};
-addEventListener("keydown",e=>{
-  const k=e.key.toLowerCase();
-  keys[k]=true;
-  if(e.code==="Space") e.preventDefault();
-  if(!running) return;
+function clearKeys(){for(const key of Object.keys(keys)) keys[key]=false}
+function gameAction(k){
+  if(!running||paused) return;
   if(k==="q") tool=(tool+TOOLS.length-1)%TOOLS.length;
   if(k==="e") tool=(tool+1)%TOOLS.length;
   if(k==="r") scanPulse=1.8;
   if(k==="c") convOn=true;
+}
+function setPaused(value,reason="Paused. Resume when ready."){
+  if(!running) return;
+  paused=value; clearKeys();
+  const pause=document.getElementById("pause");
+  pause.textContent=paused?"Resume":"Pause";
+  pause.setAttribute("aria-pressed",String(paused));
+  document.getElementById("game-state").textContent=paused?reason:"Run active. Escape or Pause stops the local clock.";
+  if(!paused) c.focus();
+}
+const gameKeys=new Set(["w","a","s","d","q","e","r","f"," ","c"]);
+addEventListener("keydown",e=>{
+  if(!running||document.activeElement!==c) return;
+  const k=e.key.toLowerCase();
+  if(k==="escape"){e.preventDefault(); if(!e.repeat) setPaused(!paused); return}
+  if(paused||!gameKeys.has(k)) return;
+  e.preventDefault(); keys[k]=true;
+  if(!e.repeat) gameAction(k);
 });
 addEventListener("keyup",e=>{keys[e.key.toLowerCase()]=false});
+addEventListener("blur",()=>{clearKeys();setPaused(true,"Paused because the window lost focus.")});
+document.addEventListener("visibilitychange",()=>{if(document.hidden) setPaused(true,"Paused while this tab is hidden.")});
+c.addEventListener("blur",clearKeys);
+c.addEventListener("pointerdown",()=>c.focus());
+document.getElementById("pause").addEventListener("click",()=>setPaused(!paused));
+document.querySelectorAll("[data-action]").forEach(button=>button.addEventListener("click",()=>{gameAction(button.dataset.action);c.focus()}));
+document.querySelectorAll("[data-key]").forEach(button=>{
+  const key=button.dataset.key;
+  const release=()=>{keys[key]=false};
+  button.addEventListener("pointerdown",e=>{
+    if(!running||paused) return;
+    e.preventDefault(); c.focus(); keys[key]=true; button.setPointerCapture(e.pointerId);
+  });
+  for(const event of ["pointerup","pointercancel","lostpointercapture","blur"]) button.addEventListener(event,release);
+  button.addEventListener("keydown",e=>{if((e.key===" "||e.key==="Enter")&&running&&!paused){e.preventDefault();keys[key]=true}});
+  button.addEventListener("keyup",e=>{if(e.key===" "||e.key==="Enter"){e.preventDefault();release()}});
+});
 
 function convAmt(){return convOn?Math.max(0,(t-8)/28):Math.max(0,(t-45)/25)}
 function ringR(){return 8-convAmt()*6.2}
 function finish(ok){
-  running=false;
+  running=false; clearKeys();
   if(ok) extracted=true; else burned=true;
   mem.best=Math.max(mem.best||0,juice); saveMem(mem);
   document.getElementById("endtag").textContent=ok?"EXTRACT WINDOW":"CONVERGENCE";
   document.getElementById("endtitle").textContent=ok?"EXTRACTED":"BURNED";
   document.getElementById("endtitle").style.color=ok?"#e8c36a":"#ff4d6d";
   document.getElementById("endstats").textContent=`${op.name}  JUICE ${juice}  BEST ${mem.best}  RUNS ${mem.runs}`;
-  document.getElementById("end").classList.add("show");
+  document.getElementById("end").hidden=false;
+  document.getElementById("hud-bottom").inert=true;
+  document.getElementById("storage-note").textContent=storageAvailable?"Scores stay in this browser.":"Browser storage is unavailable. This score is kept in memory for this visit.";
+  document.getElementById("again").focus();
 }
 
 function tick(dt){
-  if(!running) return;
+  if(!running||paused) return;
   t+=dt; heat=Math.max(0,heat-dt*8*(TOOLS[tool]==="DAMPER"?1.8:1));
   scanPulse=Math.max(0,scanPulse-dt);
   const boost=keys[" "]? (op.name==="HELIX"?2.1:1.7):1;
@@ -158,18 +264,19 @@ function tick(dt){
 }
 
 function diamond(x,y,col,a=1){
-  const [sx,sy]=iso(x,y);
-  const ox=innerWidth/2, oy=Math.max(56,innerHeight*0.12);
+  const [logicalX,logicalY]=iso(x,y);
+  const {scale,x:ox,y:oy}=projection, sx=logicalX*scale, sy=logicalY*scale;
+  const width=TILE_W*scale, height=TILE_H*scale;
   ctx.beginPath();
   ctx.moveTo(ox+sx,oy+sy);
-  ctx.lineTo(ox+sx+TILE_W/2,oy+sy+TILE_H/2);
-  ctx.lineTo(ox+sx,oy+sy+TILE_H);
-  ctx.lineTo(ox+sx-TILE_W/2,oy+sy+TILE_H/2);
+  ctx.lineTo(ox+sx+width/2,oy+sy+height/2);
+  ctx.lineTo(ox+sx,oy+sy+height);
+  ctx.lineTo(ox+sx-width/2,oy+sy+height/2);
   ctx.closePath(); ctx.globalAlpha=a; ctx.fillStyle=col; ctx.fill(); ctx.globalAlpha=1;
 }
 
 function draw(){
-  ctx.fillStyle="#07080c"; ctx.fillRect(0,0,innerWidth,innerHeight);
+  ctx.fillStyle="#080b12"; ctx.fillRect(0,0,innerWidth,innerHeight);
   const conv=convAmt(); const ring=ringR();
   const vision=op.scan+(scanPulse>0?2.4:0)+(TOOLS[tool]==="SCANNER"?1.2:0);
   for(let y=0;y<N;y++) for(let x=0;x<N;x++){
@@ -182,13 +289,18 @@ function draw(){
   for(const w of windows) diamond(w.x,w.y,w.open?"#e8c36a":"#5a4a22",w.open?1:0.45);
   for(const L of loot) if(!L.got) diamond(L.x,L.y,"#22f0d4",0.88);
   diamond(gx,gy,op.col);
+  ctx.strokeStyle="#f1f4f8"; ctx.lineWidth=1.5; ctx.stroke();
   const state=extracted?"EXTRACTED":burned?"BURNED":(conv>0?"CONVERGENCE":"IN GRID");
   document.getElementById("clock").textContent=(extracted||burned)?state:("T+"+Math.floor(t));
   document.getElementById("clock").className=burned?"warn":"gold";
   document.getElementById("stats").textContent=`${op.name} · ${TOOLS[tool]} · JUICE ${juice} · HEAT ${Math.floor(heat)} · BEST ${mem.best||0} · ${state}`;
 }
 let last=performance.now();
-function loop(now){tick((now-last)/1000); last=now; draw(); requestAnimationFrame(loop)}
+function loop(now){
+  const dt=(now-last)/1000; last=now;
+  if(running&&!paused){tick(dt);draw()}
+  requestAnimationFrame(loop);
+}
 requestAnimationFrame(loop);
 </script>
 </body>
