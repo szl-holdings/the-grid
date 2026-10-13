@@ -4,7 +4,7 @@
 # Base image pinned by OCI index digest (python:3.12-slim = 3.12.14-slim-trixie,
 # resolved from registry-1.docker.io on 2026-09-29). Dependabot's docker
 # ecosystem (.github/dependabot.yml) proposes digest bumps.
-FROM python:3.12-slim@sha256:f77ac9e44ae96ef2c90b8053ea08c31f8be030f824196b0ae4db6d462c84e51f
+FROM python:3.14-slim@sha256:a2b82f3c48559aa0a8446d9af49826b6e2b2016f4cd2afabfe6013ec53729170
 WORKDIR /app
 # Every COPY source below is the Space deploy set: the reusable deployer
 # (.github/workflows/hf-space.yml) derives the files it publishes from these lines.
