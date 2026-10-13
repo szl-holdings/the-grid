@@ -70,3 +70,20 @@ Apache-2.0.
 <!-- SZL-PRESERVED-TECHNICAL-BODY:END -->
 
 </details>
+
+### Read-only drift monitor
+
+The daily `HF Space drift watch` workflow checks current token authorization
+metadata and the public Space without publishing. Each observation refreshes
+main and compares immutable source blob IDs; an advance during observation is
+retried. A changed Dockerfile or monitor configuration requires a fresh run so
+old route/path declarations cannot certify new deployment configuration.
+
+GitHub can disable scheduled workflows after 60 days of repository inactivity.
+The existing external SZL runtime monitor must independently inspect this
+repository's `.github/workflows/hf-space-drift.yml` state and latest successful
+run. It must report disabled state, failures, and a success older than 48 hours
+as an operational alert. Recovery is to re-enable this exact workflow and
+manually dispatch it on trusted `main`, then verify both credential and public
+drift jobs. The daily cron alone does not provide this external coverage;
+continuous idle monitoring remains unverified until that integration is active.

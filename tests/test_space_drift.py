@@ -10,9 +10,8 @@ import copy
 import io
 import importlib.util
 import subprocess
-import unittest
+import unittest.mock
 from pathlib import Path
-from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / ".github" / "scripts" / "hf_space_drift.py"
@@ -119,10 +118,11 @@ class SettleLoop(unittest.TestCase):
         building = healthy()
         building["api"]["runtime"]["stage"] = "BUILDING"
         seq = [building, healthy()]
-        with mock.patch.object(drift, "observe", side_effect=lambda *a: copy.deepcopy(seq.pop(0))), \
-             mock.patch.object(drift, "git_head_oids", return_value=dict(GIT)), \
-             mock.patch.object(drift.time, "sleep") as sleep, \
-             mock.patch.dict("os.environ", {}, clear=False) as env, \
+        with unittest.mock.patch.object(drift, "observe", side_effect=lambda *a: copy.deepcopy(seq.pop(0))), \
+             unittest.mock.patch.object(drift, "git_head_oids", return_value=dict(GIT)), \
+             unittest.mock.patch.object(drift, "refresh_main", return_value=HEAD), \
+             unittest.mock.patch.object(drift.time, "sleep") as sleep, \
+             unittest.mock.patch.dict("os.environ", {}, clear=False) as env, \
              contextlib.redirect_stdout(io.StringIO()):
             env.pop("GITHUB_STEP_SUMMARY", None)
             rc = drift.main(["--space", "SZLHOLDINGS/the-grid", "--paths", '["ALIGN.md","Dockerfile","README.md","healthz","play.html"]',
@@ -134,15 +134,63 @@ class SettleLoop(unittest.TestCase):
     def test_fails_red_when_drift_persists(self) -> None:
         stale = healthy()
         stale["hub_oids"]["play.html"] = "f" * 40
-        with mock.patch.object(drift, "observe", return_value=stale), \
-             mock.patch.object(drift, "git_head_oids", return_value=dict(GIT)), \
-             mock.patch.object(drift.time, "sleep"), \
-             mock.patch.dict("os.environ", {}, clear=False) as env, \
+        with unittest.mock.patch.object(drift, "observe", return_value=stale), \
+             unittest.mock.patch.object(drift, "git_head_oids", return_value=dict(GIT)), \
+             unittest.mock.patch.object(drift, "refresh_main", return_value=HEAD), \
+             unittest.mock.patch.object(drift.time, "sleep"), \
+             unittest.mock.patch.dict("os.environ", {}, clear=False) as env, \
              contextlib.redirect_stdout(io.StringIO()):
             env.pop("GITHUB_STEP_SUMMARY", None)
             rc = drift.main(["--space", "SZLHOLDINGS/the-grid", "--paths", '["play.html"]',
                              "--served", "{}", "--settle-seconds", "0"])
         self.assertEqual(rc, 1)
+
+
+class MovingMain(unittest.TestCase):
+    def run_with(self, refresh, observe, oids, settle=600):
+        output = io.StringIO()
+        with unittest.mock.patch.object(drift, "refresh_main", side_effect=refresh), \
+             unittest.mock.patch.object(drift, "observe", side_effect=observe), \
+             unittest.mock.patch.object(drift, "git_head_oids", side_effect=oids), \
+             unittest.mock.patch.object(drift.time, "sleep"), \
+             unittest.mock.patch.dict("os.environ", {}, clear=True), contextlib.redirect_stdout(output):
+            rc = drift.main(["--space", "SZLHOLDINGS/the-grid", "--paths", '["play.html"]',
+                             "--served", '{"/": "play.html"}', "--settle-seconds", str(settle), "--interval", "1"])
+        return rc, output.getvalue()
+
+    def test_source_advance_during_observation_is_retried_against_new_main(self):
+        new = "b" * 40
+        new_git = {**GIT, "play.html": "c" * 40}
+        newer = healthy()
+        newer["hub_oids"] = new_git
+        newer["smoke"]["/"]["oid"] = new_git["play.html"]
+        def oids(paths, ref="HEAD"):
+            if "Dockerfile" in paths:
+                return {"Dockerfile": "1", ".github/workflows/hf-space-drift.yml": "2"}
+            return new_git if ref == new else GIT
+        rc, output = self.run_with([HEAD, new, new, new], [newer, newer], oids)
+        self.assertEqual(rc, 0, output)
+        self.assertIn("main advanced during observation", output)
+        self.assertIn(f"observed main `{new}`", output)
+        self.assertIn("**Result:** no drift", output)
+
+    def test_failed_main_refresh_is_not_a_stale_success(self):
+        rc, output = self.run_with([subprocess.TimeoutExpired("git", 30)], [], lambda *a: GIT, settle=0)
+        self.assertEqual(rc, 1)
+        self.assertIn("observation failed: TimeoutExpired", output)
+
+    def test_changed_monitor_configuration_requires_fresh_run(self):
+        rc, output = self.run_with([HEAD], [], lambda paths, ref="HEAD": {"Dockerfile": ref}, settle=0)
+        self.assertEqual(rc, 1)
+        self.assertIn("fresh workflow run is required", output)
+
+    def test_refresh_fetches_main_objects_without_checkout(self):
+        responses = [unittest.mock.Mock(), unittest.mock.Mock(stdout=HEAD + "\n")]
+        with unittest.mock.patch.object(drift.subprocess, "run", side_effect=responses) as run:
+            self.assertEqual(drift.refresh_main(), HEAD)
+        self.assertIn("refs/heads/main", run.call_args_list[0].args[0])
+        self.assertEqual(run.call_args_list[0].kwargs["timeout"], 30)
+        self.assertFalse(any("checkout" in c.args[0] for c in run.call_args_list))
 
 
 if __name__ == "__main__":

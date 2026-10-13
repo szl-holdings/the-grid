@@ -56,38 +56,76 @@ jobs:
           CANDIDATE_HF_ORG_TOKEN: ${{ secrets.HF_ORG_TOKEN }}
           CANDIDATE_HF_TOKEN: ${{ secrets.HF_TOKEN }}
           HUB_ORG: SZLHOLDINGS
+          HUB_SPACE: SZLHOLDINGS/the-grid
         shell: python
         run: |
-          import json, os, urllib.error, urllib.request
+          import json, os, re, urllib.error, urllib.request
 
           org = os.environ["HUB_ORG"]
+          space = os.environ["HUB_SPACE"]
+
+          def read_json(url, token):
+              req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+              with urllib.request.urlopen(req, timeout=30) as resp:
+                  data = resp.read(1024 * 1024 + 1)
+              if len(data) > 1024 * 1024:
+                  raise ValueError("provider response exceeds limit")
+              obj = json.loads(data)
+              if not isinstance(obj, dict):
+                  raise ValueError("provider response is not an object")
+              return obj
+
+          def can_write_target(who, info):
+              auth = who.get("auth")
+              access = auth.get("accessToken") if isinstance(auth, dict) else None
+              if not isinstance(access, dict):
+                  return False
+              orgs = who.get("orgs")
+              members = [o for o in orgs if isinstance(o, dict) and o.get("name") == org] if isinstance(orgs, list) else []
+              if len(members) != 1:
+                  return False
+              member = members[0]
+              restrictions = member.get("securityRestrictions", [])
+              if member.get("roleInOrg") not in {"admin", "write"} or not isinstance(restrictions, list) or restrictions:
+                  return False
+              kind = access.get("role")
+              grant = kind == "write"
+              if kind == "fineGrained":
+                  fine = access.get("fineGrained")
+                  scoped = fine.get("scoped") if isinstance(fine, dict) else None
+                  for entry in scoped if isinstance(scoped, list) else []:
+                      entity = entry.get("entity") if isinstance(entry, dict) else None
+                      permissions = entry.get("permissions") if isinstance(entry, dict) else None
+                      if not isinstance(entity, dict) or not isinstance(permissions, list) or "repo.write" not in permissions:
+                          continue
+                      grant = grant or (entity.get("type") == "org" and entity.get("name") == org) or (entity.get("type") == "space" and entity.get("name") == space)
+              if not grant or info.get("id") != space:
+                  return False
+              group = info.get("resourceGroup")
+              if group is None:
+                  # Omitted public metadata is not proof that no group exists.
+                  return member.get("roleInOrg") == "admin"
+              if not isinstance(group, dict) or not isinstance(group.get("id"), str) or not re.fullmatch(r"[0-9a-f]{24}", group["id"]):
+                  return False
+              groups = member.get("resourceGroups")
+              matches = [g for g in groups if isinstance(g, dict) and g.get("id") == group["id"]] if isinstance(groups, list) else []
+              return member.get("roleInOrg") == "admin" or (len(matches) == 1 and matches[0].get("role") in {"admin", "write"})
           rows, pick = [], ""
           for name in ("HF_ORG_TOKEN", "HF_TOKEN"):
               token = os.environ.get(f"CANDIDATE_{name}", "")
               row = {"secret": name, "present": bool(token)}
               if token:
-                  req = urllib.request.Request(
-                      "https://huggingface.co/api/whoami-v2",
-                      headers={"Authorization": f"Bearer {token}"})
                   try:
-                      with urllib.request.urlopen(req, timeout=30) as resp:
-                          who = json.load(resp)
-                      auth = who.get("auth") or {}
-                      access = auth.get("accessToken") or {}
-                      kind = access.get("role") or auth.get("type") or "unknown"
-                      member = next((o for o in who.get("orgs") or [] if o.get("name") == org), {})
-                      scoped = (access.get("fineGrained") or {}).get("scoped") or []
-                      if kind == "fineGrained":
-                          can_write = any(
-                              (s.get("entity") or {}).get("name", "").split("/")[0] == org
-                              and any(p.endswith(".write") for p in s.get("permissions") or [])
-                              for s in scoped)
-                      else:
-                          can_write = kind != "read" and member.get("roleInOrg") in {"admin", "write", "contributor"}
+                      who = read_json("https://huggingface.co/api/whoami-v2", token)
+                      info = read_json(f"https://huggingface.co/api/spaces/{space}?expand=resourceGroup", token)
+                      auth = who.get("auth") if isinstance(who.get("auth"), dict) else {}
+                      access = auth.get("accessToken") if isinstance(auth.get("accessToken"), dict) else {}
+                      kind = access.get("role") or "unknown"
+                      can_write = can_write_target(who, info)
                       row.update(valid=True, kind=kind, expires=auth.get("expiresAt"), can_write=can_write)
                   except urllib.error.HTTPError as err:
                       row.update(valid=False, http=err.code)
-                  except OSError as err:
+                  except (OSError, ValueError, TypeError) as err:
                       row.update(valid=False, error=type(err).__name__)
               rows.append(row)
               if not pick and row.get("can_write"):
@@ -99,7 +137,7 @@ jobs:
                   summary.write(f"| {r['secret']} | {r['present']} | {r.get('valid', '-')} | {r.get('kind', r.get('http', '-'))} | {r.get('can_write', '-')} | {r.get('expires') or '-'} |\n")
           print(json.dumps(rows))
           if not pick:
-              raise SystemExit(f"No candidate secret can write to {org}; rotate HF_ORG_TOKEN (organization) or HF_TOKEN (repository).")
+              raise SystemExit(f"No candidate secret has verified write authorization for {space}; rotate HF_ORG_TOKEN (organization) or HF_TOKEN (repository).")
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
               out.write(f"pick={pick}\n")
 

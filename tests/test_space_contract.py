@@ -185,13 +185,15 @@ class DeployWorkflowContract(unittest.TestCase):
         self.assertEqual(self.job["needs"], "credential")
         self.assertEqual(self.wf["permissions"], {"contents": "read"})
 
-    def test_credential_job_only_reads_whoami(self) -> None:
+    def test_credential_job_only_reads_authorization_metadata(self) -> None:
         cred = self.wf["jobs"]["credential"]
         self.assertNotIn("permissions", cred)  # inherits contents: read
         (step,) = cred["steps"]
-        self.assertEqual(set(step["env"]) - {"HUB_ORG"}, {"CANDIDATE_HF_ORG_TOKEN", "CANDIDATE_HF_TOKEN"})
+        self.assertEqual(set(step["env"]) - {"HUB_ORG", "HUB_SPACE"}, {"CANDIDATE_HF_ORG_TOKEN", "CANDIDATE_HF_TOKEN"})
         script = step["run"]
         self.assertIn("https://huggingface.co/api/whoami-v2", script)
+        self.assertIn("?expand=resourceGroup", script)
+        self.assertEqual(step["env"]["HUB_SPACE"], SPACE_ID)
         self.assertNotRegex(script, HUB_WRITE_CALL)
         # Candidates are tried organization-first and the job fails closed.
         self.assertLess(script.index('"HF_ORG_TOKEN"'), script.index('"HF_TOKEN")'))

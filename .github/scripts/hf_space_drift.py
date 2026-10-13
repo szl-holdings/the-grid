@@ -4,11 +4,12 @@ Run by .github/workflows/hf-space-drift.yml on a schedule, so a Space that has
 drifted from main (a failed or skipped deploy, a hand edit on the Hub, a stuck
 build, a stale edge) turns red between pushes instead of staying invisible.
 
-It holds no credential and only issues anonymous HTTP GETs:
+It holds no credential. It reads main through Git object fetches and uses
+anonymous HTTP GETs for the Space:
   1. GET /api/spaces/<id>: the runtime must be RUNNING on the Hub head
      (runtime.sha == sha).
   2. GET /api/spaces/<id>/tree/<sha>: for every published path the Hub blob
-     oid must equal `git ls-tree HEAD` (a git blob oid; these files are not LFS).
+     oid must equal `git ls-tree <fresh main SHA>` (a git blob oid; these files are not LFS).
   3. GET <host><path> for every served path: HTTP 200 with a body whose git
      blob oid equals the committed source file the Dockerfile serves there.
 
@@ -21,6 +22,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -36,10 +38,10 @@ def git_blob_oid(data: bytes) -> str:
     return hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
 
 
-def git_head_oids(paths: list[str]) -> dict[str, str]:
+def git_head_oids(paths: list[str], ref: str = "HEAD") -> dict[str, str]:
     out = subprocess.run(
-        ["git", "ls-tree", "-z", "HEAD", "--", *paths],
-        check=True, capture_output=True,
+        ["git", "ls-tree", "-z", ref, "--", *paths],
+        check=True, capture_output=True, timeout=30,
     ).stdout.decode("utf-8")
     oids = {}
     for entry in filter(None, out.split("\0")):
@@ -48,6 +50,17 @@ def git_head_oids(paths: list[str]) -> dict[str, str]:
         if kind == "blob":
             oids[path] = oid
     return oids
+
+
+def refresh_main() -> str:
+    """Fetch objects only; do not replace or execute the checked-out monitor."""
+    subprocess.run(["git", "fetch", "--quiet", "--no-tags", "--depth=1", "origin", "refs/heads/main"],
+                   check=True, capture_output=True, timeout=30)
+    sha = subprocess.run(["git", "rev-parse", "--verify", "FETCH_HEAD^{commit}"],
+                         check=True, capture_output=True, text=True, timeout=30).stdout.strip()
+    if not re.fullmatch(r"[0-9a-f]{40}", sha):
+        raise ValueError("main revision is not a commit SHA")
+    return sha
 
 
 def get(url: str, timeout: float = 30) -> tuple[int, bytes]:
@@ -120,13 +133,13 @@ def problems(obs: dict, git_oids: dict[str, str], paths: list[str], served: dict
     return found
 
 
-def summarize(space: str, obs: dict, git_oids: dict, paths: list[str], found: list[str]) -> str:
+def summarize(space: str, obs: dict, git_oids: dict, paths: list[str], found: list[str], source_sha: str) -> str:
     api = obs.get("api") or {}
     runtime = api.get("runtime") or {}
     lines = [
         f"### Space drift: {space}\n",
         f"- Hub head `{api.get('sha')}`, runtime `{runtime.get('sha')}`, stage `{runtime.get('stage')}`",
-        f"- main `{os.environ.get('GITHUB_SHA', 'local')}`\n",
+        f"- observed main `{source_sha}`\n",
         "| path | main oid | Hub oid | match |",
         "|---|---|---|---|",
     ]
@@ -152,17 +165,34 @@ def main(argv: list[str] | None = None) -> int:
 
     paths = json.loads(args.paths)
     served = json.loads(args.served)
-    git_oids = git_head_oids(sorted(set(paths) | set(served.values())))
+    if args.settle_seconds < 0 or args.interval <= 0:
+        ap.error("settle-seconds must be nonnegative and interval must be positive")
+    wanted = sorted(set(paths) | set(served.values()))
+    # Configuration changes require a fresh workflow run with its reviewed
+    # paths/routes; a content-only main advance can settle within this run.
+    controls = ["Dockerfile", ".github/workflows/hf-space-drift.yml"]
+    admitted_controls = git_head_oids(controls)
     deadline = time.monotonic() + args.settle_seconds
     while True:
-        obs = observe(args.space, paths, served)
-        found = problems(obs, git_oids, paths, served)
+        source_sha, git_oids, obs = "unavailable", {}, {}
+        try:
+            source_sha = refresh_main()
+            if git_head_oids(controls, source_sha) != admitted_controls:
+                found = ["monitor configuration changed on main; a fresh workflow run is required"]
+            else:
+                git_oids = git_head_oids(wanted, source_sha)
+                obs = observe(args.space, paths, served)
+                after_sha = refresh_main()
+                found = (["main advanced during observation; retrying a fresh snapshot"]
+                         if after_sha != source_sha else problems(obs, git_oids, paths, served))
+        except (OSError, subprocess.SubprocessError, ValueError, TypeError) as exc:
+            found = [f"source or provider observation failed: {type(exc).__name__}"]
         if not found or time.monotonic() + args.interval > deadline:
             break
         print("not settled yet: " + "; ".join(found), flush=True)
         time.sleep(args.interval)
 
-    report = summarize(args.space, obs, git_oids, paths, found)
+    report = summarize(args.space, obs, git_oids, paths, found, source_sha)
     print(report)
     summary = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary:
