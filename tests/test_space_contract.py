@@ -20,6 +20,8 @@ DOCKERFILE = ROOT / "Dockerfile"
 README = ROOT / "README.md"
 HEALTHZ = ROOT / "healthz"
 DEPLOY_WORKFLOW = ROOT / ".github" / "workflows" / "hf-space.yml"
+DRIFT_WORKFLOW = ROOT / ".github" / "workflows" / "hf-space-drift.yml"
+DRIFT_SCRIPT = ROOT / ".github" / "scripts" / "hf_space_drift.py"
 
 SPACE_ID = "SZLHOLDINGS/the-grid"
 SOURCE_URL = "https://github.com/szl-holdings/the-grid"
@@ -183,13 +185,15 @@ class DeployWorkflowContract(unittest.TestCase):
         self.assertEqual(self.job["needs"], "credential")
         self.assertEqual(self.wf["permissions"], {"contents": "read"})
 
-    def test_credential_job_only_reads_whoami(self) -> None:
+    def test_credential_job_only_reads_authorization_metadata(self) -> None:
         cred = self.wf["jobs"]["credential"]
         self.assertNotIn("permissions", cred)  # inherits contents: read
         (step,) = cred["steps"]
-        self.assertEqual(set(step["env"]) - {"HUB_ORG"}, {"CANDIDATE_HF_ORG_TOKEN", "CANDIDATE_HF_TOKEN"})
+        self.assertEqual(set(step["env"]) - {"HUB_ORG", "HUB_SPACE"}, {"CANDIDATE_HF_ORG_TOKEN", "CANDIDATE_HF_TOKEN"})
         script = step["run"]
         self.assertIn("https://huggingface.co/api/whoami-v2", script)
+        self.assertIn("?expand=resourceGroup", script)
+        self.assertEqual(step["env"]["HUB_SPACE"], SPACE_ID)
         self.assertNotRegex(script, HUB_WRITE_CALL)
         # Candidates are tried organization-first and the job fails closed.
         self.assertLess(script.index('"HF_ORG_TOKEN"'), script.index('"HF_TOKEN")'))
@@ -209,6 +213,91 @@ class DeployWorkflowContract(unittest.TestCase):
         }
         self.assertEqual(sorted(published - paths), [], "published inputs missing from push.paths")
         self.assertEqual(sorted(paths - published), [], "push.paths lists an unpublished file")
+
+
+class DriftWatchContract(unittest.TestCase):
+    """hf-space-drift.yml: a scheduled, read-only watch that is never a writer."""
+
+    def setUp(self) -> None:
+        text = DRIFT_WORKFLOW.read_text(encoding="utf-8")
+        self.text = text
+        self.wf = yaml.safe_load(text)
+        self.assertIn("on", self.wf, 'hf-space-drift.yml must quote its "on" key')
+        self.jobs = self.wf["jobs"]
+
+    def test_runs_on_a_schedule_and_by_hand_only(self) -> None:
+        triggers = self.wf["on"]
+        self.assertEqual(set(triggers), {"schedule", "workflow_dispatch"})
+        crons = [entry["cron"] for entry in triggers["schedule"]]
+        self.assertTrue(crons, "the watch needs at least one cron")
+
+    def test_contents_read_only(self) -> None:
+        self.assertEqual(self.wf["permissions"], {"contents": "read"})
+        for name, job in self.jobs.items():
+            with self.subTest(job=name):
+                self.assertNotIn("permissions", job)
+
+    def test_never_publishes(self) -> None:
+        self.assertNotIn("reusable-hf-deploy", self.text)
+        self.assertNotIn("hf_deploy_from_dockerfile", self.text)
+        for name, job in self.jobs.items():
+            with self.subTest(job=name):
+                self.assertNotIn("uses", job)  # no reusable workflow at all
+                self.assertNotIn("secrets", job)  # nothing handed to a callee
+                self.assertNotIn("outputs", job)  # the census pick goes nowhere
+                self.assertNotIn("needs", job)
+                for step in job["steps"]:
+                    self.assertNotIn("uses", step)
+
+    def test_does_not_share_the_write_lock(self) -> None:
+        # A pending run in the same group would displace a pending deploy.
+        self.assertNotEqual(self.wf["concurrency"]["group"], LOCK_GROUP)
+        self.assertFalse(self.wf["concurrency"]["group"].startswith("hf-write/"))
+
+    def test_census_is_the_deploy_census_verbatim(self) -> None:
+        (census,) = self.jobs["credential"]["steps"]
+        (deploy_census,) = deploy_workflow()["jobs"]["credential"]["steps"]
+        self.assertEqual(census["run"], deploy_census["run"])
+        self.assertEqual(census["env"], deploy_census["env"])
+        self.assertEqual(census.get("shell"), "python")
+        self.assertIn("raise SystemExit", census["run"])  # red when nothing can write
+
+    def test_secrets_reach_only_the_census_step(self) -> None:
+        drift = yaml.safe_dump(self.jobs["drift"])
+        self.assertNotIn("secrets.", drift)
+        self.assertNotIn("github.token", drift)
+        script = DRIFT_SCRIPT.read_text(encoding="utf-8")
+        self.assertNotIn("Authorization", script)
+        self.assertNotIn("HF_TOKEN", script)
+        self.assertNotRegex(script, r"method\s*=")  # GET only
+
+    def test_checked_paths_equal_the_deploy_set(self) -> None:
+        env = self.jobs["drift"]["env"]
+        self.assertEqual(env["SPACE_ID"], SPACE_ID)
+        checked = json.loads(env["PUBLISHED_PATHS"])
+        self.assertEqual(len(checked), len(set(checked)))
+        self.assertEqual(set(checked), set(copy_sources()) | {"Dockerfile", "README.md"})
+        for path in checked:
+            self.assertTrue((ROOT / path).is_file(), path)
+
+    def test_served_routes_are_the_deploy_smoke_paths(self) -> None:
+        served = json.loads(self.jobs["drift"]["env"]["SERVED_PATHS"])
+        smoke = json.loads(deploy_workflow()["jobs"]["deploy"]["with"]["smoke-paths"])
+        self.assertEqual(sorted(served), sorted(smoke))
+        # Each route's source is the file the Dockerfile copies to that route.
+        copies = {}
+        for line in dockerfile_instructions():
+            match = re.match(r"^COPY\s+(\S+)\s+(\S+)$", line, re.IGNORECASE)
+            if match:
+                copies[match.group(1)] = match.group(2)
+        self.assertEqual(copies.get(served["/"]), "index.html")
+        self.assertEqual(copies.get(served["/healthz"]), "./healthz")
+
+    def test_runs_the_committed_drift_script(self) -> None:
+        steps = self.jobs["drift"]["steps"]
+        self.assertIn('test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"', steps[0]["run"])
+        self.assertIn(".github/scripts/hf_space_drift.py", steps[-1]["run"])
+        self.assertIn("--settle-seconds", steps[-1]["run"])
 
 
 class SingleWriter(unittest.TestCase):
