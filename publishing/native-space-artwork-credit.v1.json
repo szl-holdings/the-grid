@@ -1,0 +1,22 @@
+{
+  "schema": "szl.native-space-artwork-credit/v1",
+  "source_repository": "szl-holdings/the-grid",
+  "source_revision_before_change": "b760e21b6b3f6d47a7c0d619d72eadc1134a24b9",
+  "source_path": "README.md",
+  "source_blob_before": "d3da95f3055c6b68ab3d3fc36f84b35393bec32b",
+  "source_sha256_before": "1b8cb2ff92c7d8f34304a656c51425e7e62ea48cdf54918060a1723ba3a811e8",
+  "source_sha256_after": "dd19c0dfb5173900e8de9bdf5fc7e5d6832110883018ee8281e1bf35cba07081",
+  "preserved_source_without_credit_sha256": "1b8cb2ff92c7d8f34304a656c51425e7e62ea48cdf54918060a1723ba3a811e8",
+  "scope": "Add visible credit for the existing exact Orbit artwork only. Metadata, icon, full technical text, source interpolation and publisher control flow are preserved.",
+  "artwork_source_revision": "4309f6fce89179331b0b3ed8c99494e76c5be256",
+  "artwork_sha256": "6e2b7d72a3af3d9602b79de41df0194ede6496a9661f057108ec224c0efc92e6",
+  "prior_immutable_hub_revision": "9e7abfd56c3e9fa5b7dbb2824c0d925586c4c42b",
+  "prior_immutable_hub_card_sha256": "1b8cb2ff92c7d8f34304a656c51425e7e62ea48cdf54918060a1723ba3a811e8",
+  "validation": {
+    "source_inverse_reconstruction_exact": true,
+    "full_metadata_and_technical_body_exact": true,
+    "native_icon_unchanged": true,
+    "runtime_calls_performed": false
+  },
+  "publication_state": "SOURCE_CHANGE_ONLY; established writer not invoked by preparation"
+}
