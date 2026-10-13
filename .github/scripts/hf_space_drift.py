@@ -14,7 +14,15 @@ anonymous HTTP GETs for the Space:
      blob oid equals the committed source file the Dockerfile serves there.
 
 A deploy can be in flight when the schedule fires, so the checks are repeated
-until they pass or the settle window ends. Exit status 1 means drift.
+until they pass or the settle window ends. Every attempt re-resolves main and
+compares the Space only with the blobs of that one main commit, and only when
+main did not move while the Space was being read.
+
+Exit status 0 means a coherent main snapshot was compared and matched. Exit
+status 1 is either DRIFT (the last attempt compared a coherent main snapshot
+and found differences) or INCONCLUSIVE (the last attempt could not compare one:
+main was unreadable, moved during the observation, or changed the monitor's own
+configuration). An inconclusive run is never reported as a pass.
 """
 from __future__ import annotations
 
@@ -133,13 +141,21 @@ def problems(obs: dict, git_oids: dict[str, str], paths: list[str], served: dict
     return found
 
 
-def summarize(space: str, obs: dict, git_oids: dict, paths: list[str], found: list[str], source_sha: str) -> str:
+def verdict(found: list[str], compared: bool) -> str:
+    """'no drift' only for a passing comparison; an uncompared attempt is never drift or a pass."""
+    if compared:
+        return "DRIFT" if found else "no drift"
+    return "INCONCLUSIVE (no coherent main snapshot was compared; not a pass)"
+
+
+def summarize(space: str, obs: dict, git_oids: dict, paths: list[str], found: list[str], source_sha: str,
+              compared: bool = True) -> str:
     api = obs.get("api") or {}
     runtime = api.get("runtime") or {}
     lines = [
         f"### Space drift: {space}\n",
         f"- Hub head `{api.get('sha')}`, runtime `{runtime.get('sha')}`, stage `{runtime.get('stage')}`",
-        f"- observed main `{source_sha}`\n",
+        f"- observed main `{source_sha}`" + ("" if compared else " (not compared)") + "\n",
         "| path | main oid | Hub oid | match |",
         "|---|---|---|---|",
     ]
@@ -149,7 +165,7 @@ def summarize(space: str, obs: dict, git_oids: dict, paths: list[str], found: li
     lines += ["", "| route | HTTP | bytes | served blob |", "|---|---|---|---|"]
     for route, got in obs.get("smoke", {}).items():
         lines.append(f"| {route} | {got['status']} | {got['bytes']} | {got['oid']} |")
-    lines += ["", "**Result:** " + ("no drift" if not found else "DRIFT")]
+    lines += ["", "**Result:** " + verdict(found, compared)]
     lines += [f"- {p}" for p in found]
     return "\n".join(lines) + "\n"
 
@@ -174,7 +190,9 @@ def main(argv: list[str] | None = None) -> int:
     admitted_controls = git_head_oids(controls)
     deadline = time.monotonic() + args.settle_seconds
     while True:
-        source_sha, git_oids, obs = "unavailable", {}, {}
+        # `compared` is set only when this attempt's verdict came from one main
+        # commit that stayed the tip for the whole observation.
+        source_sha, git_oids, obs, compared = "unavailable", {}, {}, False
         try:
             source_sha = refresh_main()
             if git_head_oids(controls, source_sha) != admitted_controls:
@@ -183,8 +201,10 @@ def main(argv: list[str] | None = None) -> int:
                 git_oids = git_head_oids(wanted, source_sha)
                 obs = observe(args.space, paths, served)
                 after_sha = refresh_main()
-                found = (["main advanced during observation; retrying a fresh snapshot"]
-                         if after_sha != source_sha else problems(obs, git_oids, paths, served))
+                if after_sha != source_sha:
+                    found = ["main advanced during observation; retrying a fresh snapshot"]
+                else:
+                    found, compared = problems(obs, git_oids, paths, served), True
         except (OSError, subprocess.SubprocessError, ValueError, TypeError) as exc:
             found = [f"source or provider observation failed: {type(exc).__name__}"]
         if not found or time.monotonic() + args.interval > deadline:
@@ -192,13 +212,13 @@ def main(argv: list[str] | None = None) -> int:
         print("not settled yet: " + "; ".join(found), flush=True)
         time.sleep(args.interval)
 
-    report = summarize(args.space, obs, git_oids, paths, found, source_sha)
+    report = summarize(args.space, obs, git_oids, paths, found, source_sha, compared)
     print(report)
     summary = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary:
         with open(summary, "a", encoding="utf-8") as stream:
             stream.write(report)
-    return 1 if found else 0
+    return 0 if compared and not found else 1
 
 
 if __name__ == "__main__":

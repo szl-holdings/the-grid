@@ -8,6 +8,7 @@ from __future__ import annotations
 import contextlib
 import copy
 import io
+import json
 import importlib.util
 import subprocess
 import unittest.mock
@@ -183,6 +184,7 @@ class MovingMain(unittest.TestCase):
         rc, output = self.run_with([HEAD], [], lambda paths, ref="HEAD": {"Dockerfile": ref}, settle=0)
         self.assertEqual(rc, 1)
         self.assertIn("fresh workflow run is required", output)
+        self.assertIn("**Result:** INCONCLUSIVE", output)
 
     def test_refresh_fetches_main_objects_without_checkout(self):
         responses = [unittest.mock.Mock(), unittest.mock.Mock(stdout=HEAD + "\n")]
@@ -191,6 +193,142 @@ class MovingMain(unittest.TestCase):
         self.assertIn("refs/heads/main", run.call_args_list[0].args[0])
         self.assertEqual(run.call_args_list[0].kwargs["timeout"], 30)
         self.assertFalse(any("checkout" in c.args[0] for c in run.call_args_list))
+
+
+class MovingMainAcceptance(unittest.TestCase):
+    """X65 acceptance case 3: main moves A -> B while the scheduled watch runs.
+
+    The checkout (HEAD) is commit A. Main B changes play.html only, so the
+    monitor's own configuration is the same at A and B. Time is simulated, so
+    the bounded settle window is exercised without sleeping.
+    """
+
+    A, B = HEAD, "b" * 40
+    GIT_A = dict(GIT)
+    GIT_B = {**GIT, "play.html": "c" * 40}
+    CONTROLS = {"Dockerfile": GIT["Dockerfile"], ".github/workflows/hf-space-drift.yml": "d" * 40}
+
+    def oids(self, paths, ref="HEAD"):
+        if ".github/workflows/hf-space-drift.yml" in paths:
+            return dict(self.CONTROLS)
+        return dict(self.GIT_B if ref == self.B else self.GIT_A)
+
+    @staticmethod
+    def space_serving(git: dict, stage: str = "RUNNING") -> dict:
+        obs = healthy()
+        obs["api"]["runtime"]["stage"] = stage
+        obs["hub_oids"] = dict(git)
+        obs["smoke"]["/"]["oid"] = git["play.html"]
+        obs["smoke"]["/healthz"]["oid"] = git["healthz"]
+        return obs
+
+    def run_watch(self, refresh, observations, oids=None, settle=1200, interval=60):
+        """Run main() with main tips `refresh` (consumed per fetch) and Space states `observations`."""
+        clock = [0.0]
+        refresh, observations = list(refresh), [copy.deepcopy(o) for o in observations]
+
+        def next_tip():
+            tip = refresh.pop(0) if len(refresh) > 1 else refresh[0]
+            if isinstance(tip, BaseException):
+                raise tip
+            return tip
+
+        def next_observation(*_args):
+            return observations.pop(0) if len(observations) > 1 else copy.deepcopy(observations[0])
+
+        def sleep(seconds):
+            clock[0] += seconds
+
+        output = io.StringIO()
+        with unittest.mock.patch.object(drift, "refresh_main", side_effect=next_tip), \
+             unittest.mock.patch.object(drift, "observe", side_effect=next_observation) as observe, \
+             unittest.mock.patch.object(drift, "git_head_oids", side_effect=oids or self.oids), \
+             unittest.mock.patch.object(drift.time, "monotonic", side_effect=lambda: clock[0]), \
+             unittest.mock.patch.object(drift.time, "sleep", side_effect=sleep) as slept, \
+             unittest.mock.patch.dict("os.environ", {}, clear=True), contextlib.redirect_stdout(output):
+            rc = drift.main(["--space", "SZLHOLDINGS/the-grid", "--paths", json.dumps(PATHS),
+                             "--served", json.dumps(SERVED), "--settle-seconds", str(settle),
+                             "--interval", str(interval)])
+        return rc, output.getvalue(), observe.call_count, slept.call_count
+
+    def test_main_moved_before_first_observation_is_compared_against_new_main(self) -> None:
+        # The run was triggered at A, but main is already B when the script starts
+        # and the Space already serves B: compare with B, never with the checkout.
+        rc, output, observed, slept = self.run_watch([self.B], [self.space_serving(self.GIT_B)])
+        self.assertEqual(rc, 0, output)
+        self.assertIn(f"observed main `{self.B}`", output)
+        self.assertIn("**Result:** no drift", output)
+        self.assertNotIn(self.GIT_A["play.html"], output)
+        self.assertEqual((observed, slept), (1, 0))
+
+    def test_main_moved_during_settling_ends_on_new_main_not_drift_against_old(self) -> None:
+        # Attempt 1: main A, Space still building A. Attempt 2: main B, the deploy
+        # of B is in flight so the Space serves A. Attempt 3: the Space serves B.
+        tips = [self.A, self.A, self.B, self.B, self.B, self.B]
+        spaces = [self.space_serving(self.GIT_A, "BUILDING"), self.space_serving(self.GIT_A),
+                  self.space_serving(self.GIT_B)]
+        rc, output, observed, slept = self.run_watch(tips, spaces)
+        self.assertEqual(rc, 0, output)
+        self.assertIn(f"Hub oid {self.GIT_A['play.html']} != main {self.GIT_B['play.html']}", output)
+        self.assertIn(f"observed main `{self.B}`", output)
+        self.assertIn("**Result:** no drift", output)
+        self.assertEqual((observed, slept), (3, 2))
+
+    def test_space_matching_old_main_while_main_moves_is_not_a_pass(self) -> None:
+        # The Space matches A exactly, but main became B during that observation:
+        # that apparent success is superseded and B is assessed next.
+        tips = [self.A, self.B, self.B, self.B]
+        spaces = [self.space_serving(self.GIT_A), self.space_serving(self.GIT_B)]
+        rc, output, observed, slept = self.run_watch(tips, spaces)
+        self.assertEqual(rc, 0, output)
+        self.assertIn("main advanced during observation", output)
+        self.assertIn(f"observed main `{self.B}`", output)
+        self.assertEqual((observed, slept), (2, 1))
+
+    def test_drift_persisting_against_stable_new_main_still_fails_after_window(self) -> None:
+        # The deploy of B never lands: the Space keeps serving A while main stays
+        # B. The watch must end red against B once the bounded window closes.
+        rc, output, observed, slept = self.run_watch(
+            [self.A, self.B], [self.space_serving(self.GIT_A)], settle=600, interval=60)
+        self.assertEqual(rc, 1, output)
+        self.assertIn("**Result:** DRIFT", output)
+        self.assertIn(f"observed main `{self.B}`\n", output)
+        self.assertIn(f"- play.html: Hub oid {self.GIT_A['play.html']} != main {self.GIT_B['play.html']}", output)
+        self.assertIn(f"- GET / serves blob {self.GIT_A['play.html']}, main play.html is {self.GIT_B['play.html']}",
+                      output)
+        self.assertEqual((observed, slept), (11, 10))  # attempts at t=0,60,...,600, then stop
+
+    def test_unreadable_main_is_inconclusive_never_drift_or_pass(self) -> None:
+        unreadable_tree = subprocess.CalledProcessError(128, ["git", "ls-tree"])
+
+        def tree_unreadable_at_b(paths, ref="HEAD"):
+            if ref == self.B:
+                raise unreadable_tree
+            return self.oids(paths, ref)
+
+        cases = (("fetch fails", [subprocess.CalledProcessError(128, ["git", "fetch"])], None, "CalledProcessError"),
+                 ("fetch times out", [subprocess.TimeoutExpired("git", 30)], None, "TimeoutExpired"),
+                 ("fetched tree unreadable", [self.B], tree_unreadable_at_b, "CalledProcessError"))
+        for name, tips, oids, error in cases:
+            with self.subTest(name):
+                rc, output, observed, slept = self.run_watch(
+                    tips, [self.space_serving(self.GIT_B)], oids=oids, settle=120, interval=60)
+                self.assertEqual(rc, 1, output)
+                self.assertIn(f"source or provider observation failed: {error}", output)
+                self.assertIn("**Result:** INCONCLUSIVE", output)
+                self.assertNotIn("**Result:** DRIFT", output)
+                self.assertNotIn("**Result:** no drift", output)
+                self.assertIn("(not compared)", output)
+                self.assertEqual((observed, slept), (0, 2))
+
+    def test_main_still_moving_when_window_closes_is_inconclusive(self) -> None:
+        rc, output, observed, slept = self.run_watch(
+            [self.A, self.B], [self.space_serving(self.GIT_A)], settle=0)
+        self.assertEqual(rc, 1, output)
+        self.assertIn("main advanced during observation", output)
+        self.assertIn(f"observed main `{self.A}` (not compared)", output)
+        self.assertIn("**Result:** INCONCLUSIVE", output)
+        self.assertEqual((observed, slept), (1, 0))
 
 
 if __name__ == "__main__":
