@@ -1,0 +1,122 @@
+name: HF Space drift watch
+
+# Read-only daily watch over the Hugging Face Space SZLHOLDINGS/the-grid.
+# hf-space.yml only runs when a published file is pushed, so a Hub credential
+# that dies, or a Space that drifts from main, stayed invisible until the next
+# deploy attempt. This workflow turns red between pushes instead. It never
+# publishes: it calls no deployer, passes no secret to any writer, and the drift
+# job holds no credential at all.
+#
+#   credential: the same whoami-only census as hf-space.yml's credential job
+#               (tests/test_space_contract.py requires the step to be identical);
+#               red when no candidate secret can write to SZLHOLDINGS.
+#   drift:      anonymous GETs only (.github/scripts/hf_space_drift.py). Red unless
+#               the Space is RUNNING on its Hub head, every published file's Hub
+#               blob oid equals main, and / and /healthz return HTTP 200 with the
+#               exact bytes of the committed files the Dockerfile serves there.
+#
+# Its concurrency group is deliberately NOT the hf-write/space lock: a pending
+# watch run must never be able to displace a pending deploy.
+
+"on":
+  schedule:
+    - cron: "41 6 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hf-space-drift/SZLHOLDINGS/the-grid
+  cancel-in-progress: false
+
+jobs:
+  credential:
+    name: Hub credential census (read-only whoami)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - id: select
+        env:
+          CANDIDATE_HF_ORG_TOKEN: ${{ secrets.HF_ORG_TOKEN }}
+          CANDIDATE_HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HUB_ORG: SZLHOLDINGS
+        shell: python
+        run: |
+          import json, os, urllib.error, urllib.request
+
+          org = os.environ["HUB_ORG"]
+          rows, pick = [], ""
+          for name in ("HF_ORG_TOKEN", "HF_TOKEN"):
+              token = os.environ.get(f"CANDIDATE_{name}", "")
+              row = {"secret": name, "present": bool(token)}
+              if token:
+                  req = urllib.request.Request(
+                      "https://huggingface.co/api/whoami-v2",
+                      headers={"Authorization": f"Bearer {token}"})
+                  try:
+                      with urllib.request.urlopen(req, timeout=30) as resp:
+                          who = json.load(resp)
+                      auth = who.get("auth") or {}
+                      access = auth.get("accessToken") or {}
+                      kind = access.get("role") or auth.get("type") or "unknown"
+                      member = next((o for o in who.get("orgs") or [] if o.get("name") == org), {})
+                      scoped = (access.get("fineGrained") or {}).get("scoped") or []
+                      if kind == "fineGrained":
+                          can_write = any(
+                              (s.get("entity") or {}).get("name", "").split("/")[0] == org
+                              and any(p.endswith(".write") for p in s.get("permissions") or [])
+                              for s in scoped)
+                      else:
+                          can_write = kind != "read" and member.get("roleInOrg") in {"admin", "write", "contributor"}
+                      row.update(valid=True, kind=kind, expires=auth.get("expiresAt"), can_write=can_write)
+                  except urllib.error.HTTPError as err:
+                      row.update(valid=False, http=err.code)
+                  except OSError as err:
+                      row.update(valid=False, error=type(err).__name__)
+              rows.append(row)
+              if not pick and row.get("can_write"):
+                  pick = name
+
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write("### Hub credential census\n\n| secret | present | valid | kind | can write | expires |\n|---|---|---|---|---|---|\n")
+              for r in rows:
+                  summary.write(f"| {r['secret']} | {r['present']} | {r.get('valid', '-')} | {r.get('kind', r.get('http', '-'))} | {r.get('can_write', '-')} | {r.get('expires') or '-'} |\n")
+          print(json.dumps(rows))
+          if not pick:
+              raise SystemExit(f"No candidate secret can write to {org}; rotate HF_ORG_TOKEN (organization) or HF_TOKEN (repository).")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+              out.write(f"pick={pick}\n")
+
+  drift:
+    name: Public Space serves main
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      SPACE_ID: SZLHOLDINGS/the-grid
+      # The deploy set: Dockerfile COPY sources plus the Dockerfile and the card.
+      # tests/test_space_contract.py requires this to equal the Dockerfile.
+      PUBLISHED_PATHS: '["ALIGN.md", "Dockerfile", "README.md", "healthz", "play.html"]'
+      # Served route -> committed file the Dockerfile serves there.
+      SERVED_PATHS: '{"/": "play.html", "/healthz": "healthz"}'
+    steps:
+      - name: Check out exact main revision without third-party actions
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init -q .
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          git fetch -q --depth=1 origin "${GITHUB_SHA}"
+          git checkout -q --detach FETCH_HEAD
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+
+      - name: Compare the live Space with main (anonymous GETs only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -I -P .github/scripts/hf_space_drift.py \
+            --space "$SPACE_ID" \
+            --paths "$PUBLISHED_PATHS" \
+            --served "$SERVED_PATHS" \
+            --settle-seconds 1200 \
+            --interval 60
