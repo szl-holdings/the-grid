@@ -7,9 +7,16 @@ name: HF Space drift watch
 # publishes: it calls no deployer, passes no secret to any writer, and the drift
 # job holds no credential at all.
 #
-#   credential: the same authorization-metadata census as hf-space.yml's credential job
-#               (tests/test_space_contract.py requires the step to be identical);
-#               red when no candidate secret can write to the exact Space.
+#   credential: hf-space.yml's authorization-metadata census: same candidates, same
+#               requests, same write predicate and the same selection (every deploy
+#               census statement appears verbatim here; tests/test_space_contract.py
+#               and tests/test_credential_census.py hold them together). It also
+#               records each token's scope (exact-space, organization-wide,
+#               other-resource, read-only or unknown). Red when no candidate can
+#               write to the exact Space, or when the candidate the deploy would
+#               select has a scope other than exact-space or organization-wide.
+#               hf-space.yml is a published path, so the publisher adopts the
+#               scope gate only through a reviewed deploy-window change.
 #   drift:      anonymous GETs only (.github/scripts/hf_space_drift.py). Red unless
 #               the Space is RUNNING on its Hub head, every published file's Hub
 #               blob oid equals main, and / and /healthz return HTTP 200 with the
@@ -95,6 +102,47 @@ jobs:
               groups = member.get("resourceGroups")
               matches = [g for g in groups if isinstance(g, dict) and g.get("id") == group["id"]] if isinstance(groups, list) else []
               return member.get("roleInOrg") == "admin" or (len(matches) == 1 and matches[0].get("role") in {"admin", "write"})
+
+          def token_scope(who):
+              # The token's repository-write reach relative to the exact Space:
+              #   exact-space        fine-grained repo.write on this Space itself
+              #   organization-wide  fine-grained repo.write on the organization, or a classic
+              #                      write token (it reaches every repository its user can write)
+              #   other-resource     repo.write only on other named entities; cannot deploy here
+              #   read-only          no repository write at all
+              #   unknown            anything this census cannot interpret: an unrecognized role,
+              #                      a malformed entry, a write on an unnamed, unrecognized or
+              #                      resource-group entity (a group may contain this Space), or a
+              #                      global permission outside the documented set. One unknown
+              #                      entry makes the whole token unknown; unknown is never authority.
+              auth = who.get("auth")
+              access = auth.get("accessToken") if isinstance(auth, dict) else None
+              kind = access.get("role") if isinstance(access, dict) else None
+              if kind in ("read", "write"):
+                  return "read-only" if kind == "read" else "organization-wide"
+              fine = access.get("fineGrained") if kind == "fineGrained" else None
+              scoped = fine.get("scoped") if isinstance(fine, dict) else None
+              extra = fine.get("global", []) if isinstance(fine, dict) else None
+              if not isinstance(scoped, list) or not isinstance(extra, list) or any(p not in ("discussion.write", "post.write") for p in extra):
+                  return "unknown"
+              reach = set()
+              for entry in scoped:
+                  entity = entry.get("entity") if isinstance(entry, dict) else None
+                  permissions = entry.get("permissions") if isinstance(entry, dict) else None
+                  if not isinstance(entity, dict) or not isinstance(permissions, list) or not all(isinstance(p, str) for p in permissions):
+                      return "unknown"
+                  if "repo.write" not in permissions:
+                      continue
+                  target = (entity.get("type"), entity.get("name"))
+                  if target == ("org", org):
+                      reach.add("organization-wide")
+                  elif target == ("space", space):
+                      reach.add("exact-space")
+                  elif target[0] in ("dataset", "model", "space", "bucket", "kernel", "container", "collection", "org", "user", "oauth-app") and isinstance(target[1], str):
+                      reach.add("other-resource")
+                  else:
+                      return "unknown"
+              return next((s for s in ("organization-wide", "exact-space", "other-resource") if s in reach), "read-only")
           rows, pick = [], ""
           for name in ("HF_ORG_TOKEN", "HF_TOKEN"):
               token = os.environ.get(f"CANDIDATE_{name}", "")
@@ -107,7 +155,7 @@ jobs:
                       access = auth.get("accessToken") if isinstance(auth.get("accessToken"), dict) else {}
                       kind = access.get("role") or "unknown"
                       can_write = can_write_target(who, info)
-                      row.update(valid=True, kind=kind, expires=auth.get("expiresAt"), can_write=can_write)
+                      row.update(valid=True, kind=kind, scope=token_scope(who), expires=auth.get("expiresAt"), can_write=can_write)
                   except urllib.error.HTTPError as err:
                       row.update(valid=False, http=err.code)
                   except (OSError, ValueError, TypeError) as err:
@@ -117,12 +165,17 @@ jobs:
                   pick = name
 
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
-              summary.write("### Hub credential census\n\n| secret | present | valid | kind | can write | expires |\n|---|---|---|---|---|---|\n")
+              summary.write("### Hub credential census\n\n| secret | present | valid | kind | scope | can write | expires |\n|---|---|---|---|---|---|---|\n")
               for r in rows:
-                  summary.write(f"| {r['secret']} | {r['present']} | {r.get('valid', '-')} | {r.get('kind', r.get('http', '-'))} | {r.get('can_write', '-')} | {r.get('expires') or '-'} |\n")
+                  summary.write(f"| {r['secret']} | {r['present']} | {r.get('valid', '-')} | {r.get('kind', r.get('http', '-'))} | {r.get('scope', '-')} | {r.get('can_write', '-')} | {r.get('expires') or '-'} |\n")
           print(json.dumps(rows))
           if not pick:
               raise SystemExit(f"No candidate secret has verified write authorization for {space}; rotate HF_ORG_TOKEN (organization) or HF_TOKEN (repository).")
+          # The deploy census would hand this candidate to the deployer. Its scope
+          # must be a known write scope; unknown never falls through to another one.
+          scope = next(r.get("scope") for r in rows if r["secret"] == pick)
+          if scope not in ("exact-space", "organization-wide"):
+              raise SystemExit(f"{pick} is the credential the deploy census selects for {space}, but its token scope is {scope!r}; only an exact-Space or organization-wide repo.write grant is write authority.")
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
               out.write(f"pick={pick}\n")
 
