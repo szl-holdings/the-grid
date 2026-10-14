@@ -7,6 +7,7 @@ deployer uses (see .github/workflows/publication-contract.yml).
 """
 from __future__ import annotations
 
+import ast
 import json
 import re
 import subprocess
@@ -254,13 +255,62 @@ class DriftWatchContract(unittest.TestCase):
         self.assertNotEqual(self.wf["concurrency"]["group"], LOCK_GROUP)
         self.assertFalse(self.wf["concurrency"]["group"].startswith("hf-write/"))
 
-    def test_census_is_the_deploy_census_verbatim(self) -> None:
+    def test_census_is_the_deploy_census_plus_only_the_scope_gate(self) -> None:
+        # The watch must judge credentials exactly as the publisher selects them.
+        # Every top-level statement of the deploy census (imports, inputs, the
+        # request helper, the shared write predicate, the failure and the output)
+        # appears verbatim and in order in the watch. The watch only adds the
+        # token-scope classifier and its fail-closed gate, and records the scope
+        # in the census row loop and the summary table. Whether both select the
+        # same candidate is exercised in tests/test_credential_census.py.
         (census,) = self.jobs["credential"]["steps"]
         (deploy_census,) = deploy_workflow()["jobs"]["credential"]["steps"]
-        self.assertEqual(census["run"], deploy_census["run"])
         self.assertEqual(census["env"], deploy_census["env"])
         self.assertEqual(census.get("shell"), "python")
         self.assertIn("raise SystemExit", census["run"])  # red when nothing can write
+        watch = ast.parse(census["run"]).body
+        deploy = ast.parse(deploy_census["run"]).body
+        watch_dumps = [ast.dump(node) for node in watch]
+        changed, position = [], 0
+        for node in deploy:
+            dump = ast.dump(node)
+            if dump in watch_dumps[position:]:
+                position = watch_dumps.index(dump, position) + 1
+            else:
+                changed.append(node)
+        # Only the census row loop and the summary table may differ.
+        kinds = [type(node).__name__ for node in changed]
+        self.assertLessEqual(set(kinds), {"For", "With"})
+        self.assertEqual(len(kinds), len(set(kinds)))
+        for node in changed:
+            marker = "GITHUB_STEP_SUMMARY" if isinstance(node, ast.With) else 'for name in ("HF_ORG_TOKEN", "HF_TOKEN")'
+            self.assertIn(marker, ast.unparse(node).replace("'", '"'))
+        deploy_dumps = {ast.dump(node) for node in deploy}
+        added = [node for node in watch if ast.dump(node) not in deploy_dumps]
+        # A publisher that adopts the classifier must adopt the same one.
+        adopted = "token_scope" in {node.name for node in deploy if isinstance(node, ast.FunctionDef)}
+        functions = [node.name for node in added if isinstance(node, ast.FunctionDef)]
+        self.assertEqual(functions, [] if adopted else ["token_scope"], "a shared census function diverged")
+        rewritten = [node for node in added if isinstance(node, (ast.For, ast.With))]
+        self.assertEqual(len(rewritten), len(changed))
+        gate = [node for node in added if not isinstance(node, (ast.FunctionDef, ast.For, ast.With))]
+        self.assertEqual(len(gate), 0 if adopted else 2)
+        if gate:
+            lookup, check = gate
+            self.assertIsInstance(lookup, ast.Assign)
+            self.assertEqual([ast.unparse(target) for target in lookup.targets], ["scope"])
+            self.assertIsInstance(check, ast.If)
+            self.assertEqual(ast.unparse(check.test).replace("'", '"'),
+                             'scope not in ("exact-space", "organization-wide")')
+            self.assertEqual([type(node).__name__ for node in check.body], ["Raise"])
+            self.assertFalse(check.orelse)
+            # The gate sits after the existing no-candidate failure and before the output.
+            order = [ast.dump(node) for node in watch]
+            fail = next(i for i, node in enumerate(watch) if isinstance(node, ast.If) and node is not check)
+            self.assertEqual(order.index(ast.dump(lookup)), fail + 1)
+            self.assertEqual(order.index(ast.dump(check)), fail + 2)
+            self.assertIsInstance(watch[fail + 3], ast.With)
+            self.assertIn("GITHUB_OUTPUT", ast.unparse(watch[fail + 3]))
 
     def test_secrets_reach_only_the_census_step(self) -> None:
         drift = yaml.safe_dump(self.jobs["drift"])

@@ -31,6 +31,9 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 SPACE = 'SZLHOLDINGS/the-grid'
 GROUP = 'a' * 24
+# Token scope classes the watch census records (see hf-space-drift.yml).
+SCOPES = ('exact-space', 'organization-wide', 'other-resource', 'read-only', 'unknown')
+WRITE_SCOPES = ('exact-space', 'organization-wide')
 
 
 def fixture():
@@ -38,15 +41,20 @@ def fixture():
             'auth': {'accessToken': {'role': 'write'}}}
 
 
+def census_functions(workflow='.github/workflows/hf-space-drift.yml'):
+    """The imports and functions of a workflow's census step, executed without its body."""
+    source = yaml.safe_load((ROOT / workflow).read_text(encoding='utf-8'))['jobs']['credential']['steps'][0]['run']
+    parsed = ast.parse(source)
+    declarations = ast.Module(body=[n for n in parsed.body if isinstance(n, (ast.Import, ast.FunctionDef))], type_ignores=[])
+    scope = {'org': 'SZLHOLDINGS', 'space': SPACE}
+    exec(compile(declarations, f'<{workflow} census functions>', 'exec'), scope)
+    return scope
+
+
 class CredentialCensus(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        workflow = yaml.safe_load((ROOT / '.github/workflows/hf-space-drift.yml').read_text())
-        source = workflow['jobs']['credential']['steps'][0]['run']
-        parsed = ast.parse(source)
-        declarations = ast.Module(body=[n for n in parsed.body if isinstance(n, (ast.Import, ast.FunctionDef))], type_ignores=[])
-        cls.scope = {'org': 'SZLHOLDINGS', 'space': SPACE}
-        exec(compile(declarations, '<actual-census-functions>', 'exec'), cls.scope)
+        cls.scope = census_functions()
 
     def allows(self, who, info=None):
         return self.scope['can_write_target'](who, {'id': SPACE} if info is None else info)
@@ -186,6 +194,162 @@ class CredentialCensus(unittest.TestCase):
                 self.assertFalse(self.allows(who))
 
 
+def grant(kind, name, permissions=('repo.write',)):
+    return {'entity': {'_id': OBJECT_ID, 'type': kind, 'name': name}, 'permissions': list(permissions)}
+
+
+def fine_grained_who(fine):
+    who = fixture()
+    who['auth']['accessToken'] = {'role': 'fineGrained'}
+    if fine is not ABSENT:
+        who['auth']['accessToken']['fineGrained'] = fine
+    return who
+
+
+class TokenScope(unittest.TestCase):
+    """The watch census names each token's repository-write reach relative to the exact Space.
+
+    exact-space | organization-wide | other-resource | read-only | unknown.
+    Unknown is anything the census cannot interpret; it is never write authority.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.scope = census_functions()
+
+    def classify(self, who):
+        return self.scope['token_scope'](who)
+
+    def scoped(self, *entries, **fine):
+        return self.classify(fine_grained_who({'scoped': list(entries), **fine}))
+
+    def test_exact_space_and_organization_wide_are_distinct_classes(self):
+        exact, org = grant('space', SPACE), grant('org', 'SZLHOLDINGS')
+        other = grant('space', 'SZLHOLDINGS/other')
+        self.assertEqual(self.scoped(exact), 'exact-space')
+        self.assertEqual(self.scoped(other, exact), 'exact-space')
+        self.assertEqual(self.scoped(grant('space', SPACE, ['repo.content.read', 'repo.write'])), 'exact-space')
+        self.assertEqual(self.scoped(org), 'organization-wide')
+        # A token reaching the Space through both grants is reported by its broadest reach.
+        self.assertEqual(self.scoped(exact, org), 'organization-wide')
+        self.assertEqual(self.scoped(org, exact), 'organization-wide')
+        # A classic write token reaches every repository its user can write.
+        self.assertEqual(self.classify(fixture()), 'organization-wide')
+
+    def test_write_on_any_other_resource_is_other_resource(self):
+        for kind, name in (('space', 'SZLHOLDINGS/other'), ('space', 'szlholdings/the-grid'),
+                           ('space', 'SZLHOLDINGS/THE-GRID'), ('space', SPACE + ' '), ('space', SPACE + '/'),
+                           ('space', 'SZLHOLDINGS/the-grid-staging'), ('space', 'other/the-grid'),
+                           ('space', 'the-grid'), ('model', SPACE), ('dataset', SPACE), ('bucket', SPACE),
+                           ('kernel', SPACE), ('container', SPACE), ('collection', SPACE), ('oauth-app', SPACE),
+                           ('org', 'other'), ('org', 'szlholdings'), ('org', 'SZLHOLDINGS/'), ('org', SPACE),
+                           ('user', 'SZLHOLDINGS'), ('user', 'someone')):
+            with self.subTest(type=kind, name=name):
+                self.assertEqual(self.scoped(grant(kind, name)), 'other-resource')
+                self.assertEqual(self.scoped(grant(kind, name), grant('space', SPACE, ['repo.content.read'])),
+                                 'other-resource')
+
+    def test_no_repository_write_is_read_only(self):
+        who = fixture()
+        who['auth']['accessToken']['role'] = 'read'
+        self.assertEqual(self.classify(who), 'read-only')
+        self.assertEqual(self.scoped(), 'read-only')
+        for permissions in ([], ['repo.content.read'], ['repo.content.read', 'discussion.write'],
+                            ['collection.write', 'inference.endpoints.write', 'job.write', 'post.write'],
+                            ['repo.writer'], ['Repo.Write'], ['repo.write ']):
+            for kind, name in (('space', SPACE), ('org', 'SZLHOLDINGS'), ('model', 'SZLHOLDINGS/other')):
+                with self.subTest(permissions=permissions, type=kind):
+                    self.assertEqual(self.scoped(grant(kind, name, permissions)), 'read-only')
+        # Documented global permissions are not repository write.
+        self.assertEqual(self.scoped(grant('space', SPACE, ['repo.content.read']),
+                                     **{'global': ['discussion.write', 'post.write']}), 'read-only')
+        # A non-write entry on an entity this census does not model grants nothing.
+        self.assertEqual(self.scoped(grant('resource-group', None, ['repo.content.read'])), 'read-only')
+
+    def test_uninterpretable_tokens_are_unknown(self):
+        for role in ('god', 'admin', 'Write', 'fine-grained', 'fine_grained', 'oauth', '', None,
+                     ['write'], {'write': True}):
+            with self.subTest(role=role):
+                who = fixture()
+                who['auth']['accessToken'] = {'role': role, 'fineGrained': {'scoped': [grant('space', SPACE)]}}
+                self.assertEqual(self.classify(who), 'unknown')
+        for auth in (None, [], 'write', {}, {'accessToken': None}, {'accessToken': 'write'}, {'accessToken': []}):
+            with self.subTest(auth=auth):
+                who = fixture()
+                who['auth'] = auth
+                self.assertEqual(self.classify(who), 'unknown')
+        exact = {'_id': OBJECT_ID, 'type': 'space', 'name': SPACE}
+        for fine in (ABSENT, None, [], 'repo.write', {}, {'scoped': None}, {'scoped': {}}, {'scoped': 'repo.write'},
+                     {'scoped': {'entity': exact, 'permissions': ['repo.write']}},
+                     {'scoped': [None]}, {'scoped': [SPACE]}, {'scoped': [['repo.write']]},
+                     {'scoped': [{'permissions': ['repo.write']}]},
+                     {'scoped': [{'entity': None, 'permissions': ['repo.write']}]},
+                     {'scoped': [{'entity': SPACE, 'permissions': ['repo.write']}]},
+                     {'scoped': [{'entity': exact}]},
+                     {'scoped': [{'entity': exact, 'permissions': None}]},
+                     {'scoped': [{'entity': exact, 'permissions': 'repo.write'}]},
+                     {'scoped': [{'entity': exact, 'permissions': {'repo.write': True}}]},
+                     {'scoped': [{'entity': exact, 'permissions': [None, ['repo.write']]}]},
+                     {'scoped': [{'entity': exact, 'permissions': ['repo.write', None]}]}):
+            with self.subTest(fineGrained=fine):
+                self.assertEqual(self.classify(fine_grained_who(fine)), 'unknown')
+
+    def test_write_on_an_unmodelled_or_unnamed_entity_is_unknown(self):
+        # A resource group may contain this Space; an unrecognized type or a
+        # missing name cannot be placed relative to it.
+        for kind, name in (('resource-group', 'grid'), ('resource-group', None), ('Space', SPACE),
+                           ('spaces', SPACE), ('repo', SPACE), (None, SPACE), (['space'], SPACE),
+                           ('space', None), ('space', 42), ('org', None), ('org', ['SZLHOLDINGS'])):
+            with self.subTest(type=kind, name=name):
+                self.assertEqual(self.scoped(grant(kind, name)), 'unknown')
+        unnamed = {'entity': {'_id': OBJECT_ID, 'type': 'space'}, 'permissions': ['repo.write']}
+        self.assertEqual(self.scoped(unnamed), 'unknown')
+
+    def test_unknown_global_permissions_are_unknown(self):
+        for extra in (None, 'post.write', {}, [None], ['repo.write'], ['discussion.write', 'admin.write'],
+                      [['post.write']]):
+            with self.subTest(global_=extra):
+                self.assertEqual(self.scoped(grant('space', SPACE), **{'global': extra}), 'unknown')
+
+    def test_one_uninterpretable_entry_makes_even_an_exact_grant_unknown(self):
+        for bad in (None, SPACE, {'entity': {'_id': OBJECT_ID, 'type': 'space', 'name': SPACE}},
+                    grant('Space', SPACE), grant('space', None), grant('resource-group', 'grid'),
+                    {'entity': {'_id': OBJECT_ID, 'type': 'space', 'name': SPACE}, 'permissions': [None]}):
+            for entries in ((grant('space', SPACE), bad), (bad, grant('org', 'SZLHOLDINGS'))):
+                with self.subTest(entries=entries):
+                    self.assertEqual(self.scoped(*entries), 'unknown')
+
+    def test_scope_and_the_shared_write_predicate_never_disagree_except_by_failing_closed(self):
+        # Over every token shape above, with membership that admits the token:
+        # a write scope always satisfies the shared predicate, and the predicate
+        # only admits a token whose scope is a write scope or unknown.
+        exact = {'_id': OBJECT_ID, 'type': 'space', 'name': SPACE}
+        entries = [grant(kind, name, perms) for kind in ('space', 'org', 'model', 'user', 'resource-group', 'Space', None)
+                   for name in (SPACE, 'SZLHOLDINGS', 'SZLHOLDINGS/other', None)
+                   for perms in (['repo.write'], ['repo.content.read'], [None, 'repo.write'])]
+        entries += [None, {'entity': exact}, {'entity': exact, 'permissions': 'repo.write'}]
+        tokens = [fixture()]
+        for role in ('read', 'god', None, 'fineGrained'):
+            who = fixture()
+            who['auth']['accessToken'] = {'role': role}
+            tokens.append(who)
+        for first in entries:
+            tokens.append(fine_grained_who({'scoped': [first]}))
+            for second in (grant('space', SPACE), grant('org', 'SZLHOLDINGS'), grant('space', 'SZLHOLDINGS/other')):
+                tokens.append(fine_grained_who({'scoped': [first, second]}))
+        for extra in (['post.write'], ['repo.write'], None):
+            tokens.append(fine_grained_who({'scoped': [grant('space', SPACE)], 'global': extra}))
+        allows = self.scope['can_write_target']
+        for who in tokens:
+            with self.subTest(token=who['auth']):
+                scope, writable = self.classify(who), allows(who, {'id': SPACE})
+                self.assertIn(scope, SCOPES)
+                if scope in WRITE_SCOPES:
+                    self.assertTrue(writable)
+                if writable:
+                    self.assertIn(scope, WRITE_SCOPES + ('unknown',))
+
+
 ABSENT = object()
 OBJECT_ID = '0' * 24
 SCHEMA_ENTITY_TYPES = ('dataset', 'model', 'space', 'bucket', 'kernel', 'container', 'collection', 'org', 'user',
@@ -289,7 +453,8 @@ class CensusSelection(unittest.TestCase):
                          {'__name__': '__census__'})
                 except SystemExit as stop:
                     exit_message = str(stop.code)
-            text = stdout.getvalue() + summary.read_text(encoding='utf-8') + output.read_text(encoding='utf-8')
+            self.summary = summary.read_text(encoding='utf-8')
+            text = stdout.getvalue() + self.summary + output.read_text(encoding='utf-8')
             pick = dict(line.split('=', 1) for line in output.read_text(encoding='utf-8').splitlines()).get('pick')
             rows = json.loads(stdout.getvalue().splitlines()[0])
         for value in (ORG_TOKEN, REPO_TOKEN):
@@ -322,10 +487,29 @@ class CensusSelection(unittest.TestCase):
         return who
 
     def each_workflow(self, hub, tokens=None):
+        """Run the deploy census and the watch census; return the watch's result.
+
+        Both must make the same requests, reach the same per-candidate verdicts
+        and select the same candidate. The watch additionally records each valid
+        candidate's token scope; the one permitted divergence is the watch
+        refusing the deploy's selection because that scope is not a write scope.
+        """
         tokens = {'HF_ORG_TOKEN': ORG_TOKEN, 'HF_TOKEN': REPO_TOKEN} if tokens is None else tokens
-        results = [self.run_census(workflow, hub, tokens) for workflow in self.WORKFLOWS]
-        self.assertEqual(results[0], results[1], 'deploy and drift censuses disagree')
-        return results[0]
+        deploy, watch = (self.run_census(workflow, hub, tokens) for workflow in self.WORKFLOWS)
+        self.assertEqual(watch[3], deploy[3], 'deploy and drift censuses made different requests')
+        self.assertEqual([{k: v for k, v in row.items() if k != 'scope'} for row in watch[1]], deploy[1],
+                         'deploy and drift censuses disagree about a candidate')
+        for row in watch[1]:
+            self.assertEqual('scope' in row, row.get('valid') is True, row)
+            if 'scope' in row:
+                self.assertIn(row['scope'], SCOPES)
+        if (watch[0], watch[2]) != (deploy[0], deploy[2]):
+            selected = next(row for row in watch[1] if row['secret'] == deploy[0])
+            self.assertNotIn(selected['scope'], WRITE_SCOPES)
+            self.assertIsNone(watch[0], 'the watch selected a different credential than the deploy')
+            self.assertIn(f"{deploy[0]} is the credential", watch[2])
+            self.assertIn(f"token scope is {selected['scope']!r}", watch[2])
+        return watch
 
     def test_workflow_header_mutations_cannot_pass_selection_harness(self):
         expected = 'headers={"Authorization": f"Bearer {token}"}'
@@ -356,9 +540,71 @@ class CensusSelection(unittest.TestCase):
         self.assertIsNone(exit_message)
         self.assertEqual(rows, [{'secret': 'HF_ORG_TOKEN', 'present': True, 'valid': False, 'http': 400},
                                 {'secret': 'HF_TOKEN', 'present': True, 'valid': True, 'kind': 'write',
-                                 'expires': None, 'can_write': True}])
+                                 'scope': 'organization-wide', 'expires': None, 'can_write': True}])
         self.assertEqual([(url, token) for url, token, _ in calls],
                          [(WHOAMI, ORG_TOKEN), (WHOAMI, REPO_TOKEN), (SPACE_INFO, REPO_TOKEN)])
+        self.assertIn('| HF_TOKEN | True | True | write | organization-wide | True | - |', self.summary)
+
+    def test_rows_name_each_candidate_token_scope(self):
+        unknown = self.classic()
+        unknown['auth']['accessToken']['role'] = 'god'
+        for org_who, scope, pick in ((self.scoped('space', SPACE), 'exact-space', 'HF_ORG_TOKEN'),
+                                     (self.scoped('org', 'SZLHOLDINGS'), 'organization-wide', 'HF_ORG_TOKEN'),
+                                     (self.scoped('space', 'SZLHOLDINGS/other'), 'other-resource', 'HF_TOKEN'),
+                                     (self.scoped('model', SPACE), 'other-resource', 'HF_TOKEN'),
+                                     (self.classic('read'), 'read-only', 'HF_TOKEN'),
+                                     (unknown, 'unknown', 'HF_TOKEN')):
+            with self.subTest(scope=scope, org=org_who['auth']['accessToken']):
+                got, rows, exit_message, _ = self.each_workflow(self.hub(org_who=org_who, repo_who=self.classic()))
+                self.assertEqual((got, exit_message), (pick, None))
+                self.assertEqual([row['scope'] for row in rows], [scope, 'organization-wide'])
+                self.assertIn('| secret | present | valid | kind | scope | can write | expires |', self.summary)
+                self.assertIn(f'| HF_ORG_TOKEN | True | True | {org_who["auth"]["accessToken"]["role"]} | {scope} |',
+                              self.summary)
+
+    def uninterpretable_exact_grants(self):
+        """Tokens the shared predicate admits through an exact grant, but whose full scope is unknown."""
+        exact = {'_id': OBJECT_ID, 'type': 'space', 'name': SPACE}
+        for extra, fine in ((None, {}), (grant('resource-group', 'grid'), {}), (grant('Space', SPACE), {}),
+                            ({'entity': {'_id': OBJECT_ID, 'type': 'space'}, 'permissions': ['repo.write']}, {}),
+                            ({'entity': exact, 'permissions': [None]}, {}),
+                            (grant('space', 'SZLHOLDINGS/other', ['repo.content.read']), {'global': ['repo.write']})):
+            who = fixture()
+            who['auth'] = {'type': 'access_token', 'accessToken': {'role': 'fineGrained', 'fineGrained': {
+                'scoped': [{'entity': exact, 'permissions': ['repo.write']}, extra], **fine}}}
+            yield who
+
+    def test_selected_credential_with_unknown_scope_fails_the_watch_closed(self):
+        tokens = {'HF_ORG_TOKEN': ORG_TOKEN, 'HF_TOKEN': REPO_TOKEN}
+        for org_who in self.uninterpretable_exact_grants():
+            with self.subTest(org=org_who['auth']['accessToken']):
+                hub = self.hub(org_who=org_who, repo_who=self.classic())
+                # The publisher's selection is unchanged: it would deploy with HF_ORG_TOKEN.
+                deploy_pick, _, deploy_exit, _ = self.run_census(self.WORKFLOWS[0], hub, tokens)
+                self.assertEqual((deploy_pick, deploy_exit), ('HF_ORG_TOKEN', None))
+                # The watch names that credential's unknown scope and turns red
+                # instead of falling through to another candidate.
+                pick, rows, exit_message, _ = self.each_workflow(hub, tokens)
+                self.assertIsNone(pick)
+                self.assertEqual((rows[0]['can_write'], rows[0]['scope']), (True, 'unknown'))
+                self.assertEqual((rows[1]['can_write'], rows[1]['scope']), (True, 'organization-wide'))
+                self.assertIn(f"HF_ORG_TOKEN is the credential the deploy census selects for {SPACE}", exit_message)
+                self.assertIn("token scope is 'unknown'", exit_message)
+
+    def test_scope_gate_is_what_refuses_an_unknown_selection(self):
+        # Negative control: admitting `unknown` in an in-memory copy of the watch
+        # census makes the same fixtures pass, so the gate is load-bearing.
+        workflow = self.WORKFLOWS[1]
+        source = yaml.safe_load((ROOT / workflow).read_text(encoding='utf-8'))['jobs']['credential']['steps'][0]['run']
+        gate = 'scope not in ("exact-space", "organization-wide")'
+        self.assertEqual(source.count(gate), 1)
+        mutant = source.replace(gate, 'scope not in ("exact-space", "organization-wide", "unknown")')
+        for org_who in self.uninterpretable_exact_grants():
+            with self.subTest(org=org_who['auth']['accessToken']):
+                pick, rows, exit_message, _ = self.run_census(
+                    workflow, self.hub(org_who=org_who, repo_who=self.classic()),
+                    {'HF_ORG_TOKEN': ORG_TOKEN, 'HF_TOKEN': REPO_TOKEN}, source=mutant)
+                self.assertEqual((pick, exit_message, rows[0]['scope']), ('HF_ORG_TOKEN', None, 'unknown'))
 
     def test_organization_candidate_is_preferred_when_it_can_write(self):
         for org_who in (self.classic(), self.scoped('org', 'SZLHOLDINGS'), self.scoped('space', SPACE)):
