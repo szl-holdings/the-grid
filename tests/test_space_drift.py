@@ -243,6 +243,7 @@ class MovingMainAcceptance(unittest.TestCase):
         with unittest.mock.patch.object(drift, "refresh_main", side_effect=next_tip), \
              unittest.mock.patch.object(drift, "observe", side_effect=next_observation) as observe, \
              unittest.mock.patch.object(drift, "git_head_oids", side_effect=oids or self.oids), \
+             unittest.mock.patch.object(drift, "monitor_revision", return_value=self.A, create=True), \
              unittest.mock.patch.object(drift.time, "monotonic", side_effect=lambda: clock[0]), \
              unittest.mock.patch.object(drift.time, "sleep", side_effect=sleep) as slept, \
              unittest.mock.patch.dict("os.environ", {}, clear=True), contextlib.redirect_stdout(output):
@@ -329,6 +330,95 @@ class MovingMainAcceptance(unittest.TestCase):
         self.assertIn(f"observed main `{self.A}` (not compared)", output)
         self.assertIn("**Result:** INCONCLUSIVE", output)
         self.assertEqual((observed, slept), (1, 0))
+
+
+class MonitorSupersession(unittest.TestCase):
+    """Main moves A -> B and B changes how the watch itself compares.
+
+    The run executes A's monitor: its Dockerfile-derived routes, the paths and
+    arguments in A's workflow, and A's drift script. If B changes any of them,
+    A's monitor must not certify B. The run names A as superseded by B, stops,
+    and is not a pass; a run at B assesses B.
+    """
+
+    A, B = MovingMainAcceptance.A, MovingMainAcceptance.B
+    GIT_A, GIT_B = MovingMainAcceptance.GIT_A, MovingMainAcceptance.GIT_B
+    CONTROLS = MovingMainAcceptance.CONTROLS
+    oids = MovingMainAcceptance.oids
+    space_serving = staticmethod(MovingMainAcceptance.space_serving)
+    run_watch = MovingMainAcceptance.run_watch
+
+    def oids_with_change_at_b(self, changed: str):
+        def oids(paths, ref="HEAD"):
+            if ".github/workflows/hf-space-drift.yml" in paths:
+                # Like `git ls-tree <ref> -- <controls>`: every requested control
+                # exists; only `changed` has different bytes at B.
+                controls = {path: "d" * 40 for path in paths}
+                if ref == self.B and changed in controls:
+                    controls[changed] = "e" * 40
+                return controls
+            return dict(self.GIT_B if ref == self.B else self.GIT_A)
+        return oids
+
+    def assert_superseded(self, output: str, changed: str) -> None:
+        self.assertIn("**Result:** INCONCLUSIVE: SUPERSEDED", output)
+        self.assertIn(f"main `{self.B}` changed the monitor configuration ({changed})", output)
+        self.assertIn(f"this run's monitor at `{self.A}` is superseded", output)
+        self.assertIn("fresh workflow run is required", output)
+        self.assertIn(f"observed main `{self.B}` (not compared)", output)
+        self.assertNotIn("**Result:** no drift", output)
+        self.assertNotIn("**Result:** DRIFT", output)
+
+    def test_controls_include_the_drift_script_the_workflow_runs(self) -> None:
+        self.assertEqual(set(drift.CONTROLS),
+                         {"Dockerfile", ".github/workflows/hf-space-drift.yml", ".github/scripts/hf_space_drift.py"})
+        workflow = (ROOT / ".github" / "workflows" / "hf-space-drift.yml").read_text(encoding="utf-8")
+        self.assertIn("python3 -I -P .github/scripts/hf_space_drift.py", workflow)
+
+    def test_drift_script_change_on_main_supersedes_the_run(self) -> None:
+        # B serves exactly B's bytes, so A's script would certify B with A's
+        # comparison logic. That would mix A's monitor with B's main.
+        script = ".github/scripts/hf_space_drift.py"
+        rc, output, observed, slept = self.run_watch(
+            [self.B], [self.space_serving(self.GIT_B)], oids=self.oids_with_change_at_b(script))
+        self.assertEqual(rc, 1, output)
+        self.assert_superseded(output, script)
+        self.assertEqual((observed, slept), (0, 0))
+
+    def test_configuration_change_supersedes_at_once_without_spinning_the_window(self) -> None:
+        for changed in ("Dockerfile", ".github/workflows/hf-space-drift.yml"):
+            with self.subTest(changed=changed):
+                rc, output, observed, slept = self.run_watch(
+                    [self.A, self.A, self.B], [self.space_serving(self.GIT_A, "BUILDING")],
+                    oids=self.oids_with_change_at_b(changed), settle=1200, interval=60)
+                self.assertEqual(rc, 1, output)
+                self.assert_superseded(output, changed)
+                # Attempt 1 compared A coherently but the Space was still
+                # building; attempt 2 sees B, stops, and never observes for B.
+                self.assertEqual(output.count("not settled yet"), 1)
+                self.assertEqual((observed, slept), (1, 1))
+
+    def test_superseded_snapshot_is_never_reported_as_a_match(self) -> None:
+        # The Space matches A exactly while main moves to B mid-observation and
+        # the window closes: the report names both commits and shows no match
+        # verdict computed against the superseded snapshot A.
+        rc, output, observed, slept = self.run_watch(
+            [self.A, self.B], [self.space_serving(self.GIT_A)], settle=0)
+        self.assertEqual(rc, 1, output)
+        self.assertIn(f"main advanced during observation (from `{self.A}` to `{self.B}`)", output)
+        self.assertNotIn("| True |", output)
+        self.assertNotIn("| False |", output)
+        self.assertIn(f"| play.html | not compared | {self.GIT_A['play.html']} | not compared |", output)
+
+    def test_content_only_advance_still_rebinds_with_script_in_controls(self) -> None:
+        # Unchanged controls at B: the run rebinds to a coherent B snapshot.
+        rc, output, observed, slept = self.run_watch(
+            [self.A, self.B, self.B, self.B], [self.space_serving(self.GIT_A), self.space_serving(self.GIT_B)],
+            oids=self.oids_with_change_at_b("not-a-control"))
+        self.assertEqual(rc, 0, output)
+        self.assertIn(f"observed main `{self.B}`\n", output)
+        self.assertIn("**Result:** no drift", output)
+        self.assertEqual((observed, slept), (2, 1))
 
 
 if __name__ == "__main__":

@@ -18,11 +18,19 @@ until they pass or the settle window ends. Every attempt re-resolves main and
 compares the Space only with the blobs of that one main commit, and only when
 main did not move while the Space was being read.
 
+When main moves from A (the commit this run executes) to B, the run either
+rebinds to a coherent B snapshot, when B left the monitor's own configuration
+(CONTROLS: the Dockerfile, the workflow and this script) byte-identical, or
+stops at once and reports A as SUPERSEDED by B, when B changed any of them. A's
+monitor never certifies B with A's paths, routes or comparison logic; a run at
+B assesses B.
+
 Exit status 0 means a coherent main snapshot was compared and matched. Exit
 status 1 is either DRIFT (the last attempt compared a coherent main snapshot
 and found differences) or INCONCLUSIVE (the last attempt could not compare one:
-main was unreadable, moved during the observation, or changed the monitor's own
-configuration). An inconclusive run is never reported as a pass.
+main was unreadable, moved during the observation, or superseded this run by
+changing the monitor's configuration). An inconclusive run is never reported as
+a pass, and its report shows no match verdict for an uncompared snapshot.
 """
 from __future__ import annotations
 
@@ -39,6 +47,9 @@ import urllib.request
 
 HUB = "https://huggingface.co"
 USER_AGENT = "szl-holdings/the-grid hf-space-drift (read-only)"
+# What defines the comparison itself: the Dockerfile (served routes and the deploy
+# set), the workflow (paths, routes and arguments) and this script (the logic).
+CONTROLS = ("Dockerfile", ".github/workflows/hf-space-drift.yml", ".github/scripts/hf_space_drift.py")
 
 
 def git_blob_oid(data: bytes) -> str:
@@ -58,6 +69,16 @@ def git_head_oids(paths: list[str], ref: str = "HEAD") -> dict[str, str]:
         if kind == "blob":
             oids[path] = oid
     return oids
+
+
+def monitor_revision() -> str:
+    """The commit this run checked out and executes; reported, never used to decide."""
+    try:
+        sha = subprocess.run(["git", "rev-parse", "--verify", "HEAD^{commit}"],
+                             check=True, capture_output=True, text=True, timeout=30).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return "unavailable"
+    return sha if re.fullmatch(r"[0-9a-f]{40}", sha) else "unavailable"
 
 
 def refresh_main() -> str:
@@ -141,15 +162,18 @@ def problems(obs: dict, git_oids: dict[str, str], paths: list[str], served: dict
     return found
 
 
-def verdict(found: list[str], compared: bool) -> str:
+def verdict(found: list[str], compared: bool, superseded: bool = False) -> str:
     """'no drift' only for a passing comparison; an uncompared attempt is never drift or a pass."""
     if compared:
         return "DRIFT" if found else "no drift"
+    if superseded:
+        return ("INCONCLUSIVE: SUPERSEDED (main changed the monitor configuration this run executes; "
+                "a run at that main must assess it; not a pass)")
     return "INCONCLUSIVE (no coherent main snapshot was compared; not a pass)"
 
 
 def summarize(space: str, obs: dict, git_oids: dict, paths: list[str], found: list[str], source_sha: str,
-              compared: bool = True) -> str:
+              compared: bool = True, superseded: bool = False) -> str:
     api = obs.get("api") or {}
     runtime = api.get("runtime") or {}
     lines = [
@@ -161,11 +185,16 @@ def summarize(space: str, obs: dict, git_oids: dict, paths: list[str], found: li
     ]
     for path in paths:
         want, have = git_oids.get(path), obs.get("hub_oids", {}).get(path)
-        lines.append(f"| {path} | {want} | {have} | {want is not None and want == have} |")
+        if compared:
+            lines.append(f"| {path} | {want} | {have} | {want is not None and want == have} |")
+        else:
+            # An uncompared snapshot is superseded or unread: show what the Hub
+            # served, but no main oid or match verdict from that snapshot.
+            lines.append(f"| {path} | not compared | {have} | not compared |")
     lines += ["", "| route | HTTP | bytes | served blob |", "|---|---|---|---|"]
     for route, got in obs.get("smoke", {}).items():
         lines.append(f"| {route} | {got['status']} | {got['bytes']} | {got['oid']} |")
-    lines += ["", "**Result:** " + verdict(found, compared)]
+    lines += ["", "**Result:** " + verdict(found, compared, superseded)]
     lines += [f"- {p}" for p in found]
     return "\n".join(lines) + "\n"
 
@@ -185,34 +214,41 @@ def main(argv: list[str] | None = None) -> int:
         ap.error("settle-seconds must be nonnegative and interval must be positive")
     wanted = sorted(set(paths) | set(served.values()))
     # Configuration changes require a fresh workflow run with its reviewed
-    # paths/routes; a content-only main advance can settle within this run.
-    controls = ["Dockerfile", ".github/workflows/hf-space-drift.yml"]
-    admitted_controls = git_head_oids(controls)
+    # paths/routes and logic; a content-only main advance can settle within this run.
+    run_sha = monitor_revision()
+    admitted_controls = git_head_oids(list(CONTROLS))
     deadline = time.monotonic() + args.settle_seconds
     while True:
         # `compared` is set only when this attempt's verdict came from one main
         # commit that stayed the tip for the whole observation.
-        source_sha, git_oids, obs, compared = "unavailable", {}, {}, False
+        source_sha, git_oids, obs, compared, superseded = "unavailable", {}, {}, False, False
         try:
             source_sha = refresh_main()
-            if git_head_oids(controls, source_sha) != admitted_controls:
-                found = ["monitor configuration changed on main; a fresh workflow run is required"]
+            tip_controls = git_head_oids(list(CONTROLS), source_sha)
+            changed = sorted(path for path in set(admitted_controls) | set(tip_controls)
+                             if admitted_controls.get(path) != tip_controls.get(path))
+            if changed:
+                superseded = True
+                found = [f"main `{source_sha}` changed the monitor configuration ({', '.join(changed)}); "
+                         f"this run's monitor at `{run_sha}` is superseded and a fresh workflow run is required"]
             else:
                 git_oids = git_head_oids(wanted, source_sha)
                 obs = observe(args.space, paths, served)
                 after_sha = refresh_main()
                 if after_sha != source_sha:
-                    found = ["main advanced during observation; retrying a fresh snapshot"]
+                    found = [f"main advanced during observation (from `{source_sha}` to `{after_sha}`); "
+                             "retrying a fresh snapshot"]
                 else:
                     found, compared = problems(obs, git_oids, paths, served), True
         except (OSError, subprocess.SubprocessError, ValueError, TypeError) as exc:
             found = [f"source or provider observation failed: {type(exc).__name__}"]
-        if not found or time.monotonic() + args.interval > deadline:
+        # A superseded run stops at once: waiting cannot make A's monitor valid for B.
+        if superseded or not found or time.monotonic() + args.interval > deadline:
             break
         print("not settled yet: " + "; ".join(found), flush=True)
         time.sleep(args.interval)
 
-    report = summarize(args.space, obs, git_oids, paths, found, source_sha, compared)
+    report = summarize(args.space, obs, git_oids, paths, found, source_sha, compared, superseded)
     print(report)
     summary = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary:
