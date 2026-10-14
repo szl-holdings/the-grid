@@ -23,6 +23,7 @@ import tempfile
 import unittest
 import unittest.mock
 import urllib.error
+import urllib.request
 from pathlib import Path
 
 import yaml
@@ -207,6 +208,56 @@ class FakeResponse:
         return self.body if limit < 0 else self.body[:limit]
 
 
+class FakeHub:
+    """Synthetic responses with the exact Authorization contract of the census."""
+
+    def __init__(self, responses):
+        self.responses = responses
+        self.calls = []
+
+    def urlopen(self, req, timeout=None):
+        authorization = req.get_header('Authorization', '')
+        if not authorization.startswith('Bearer '):
+            raise AssertionError('fake Hub requires the exact Bearer Authorization prefix')
+        token = authorization[len('Bearer '):]
+        if not token or any(char.isspace() for char in token):
+            raise AssertionError('fake Hub requires one nonempty Bearer credential')
+        self.calls.append((req.full_url, token, timeout))
+        answer = self.responses[token][req.full_url]
+        if isinstance(answer, int):
+            raise urllib.error.HTTPError(req.full_url, answer, 'synthetic', {}, io.BytesIO(b'{}'))
+        return FakeResponse(answer)
+
+
+class FakeHubAuthorization(unittest.TestCase):
+    def test_exact_bearer_header_accepts_each_synthetic_candidate_and_endpoint(self):
+        for token in (ORG_TOKEN, REPO_TOKEN):
+            for url in (WHOAMI, SPACE_INFO):
+                with self.subTest(token=token, url=url):
+                    answer = {'synthetic': True}
+                    fake = FakeHub({token: {url: answer}})
+                    req = urllib.request.Request(url, headers={'Authorization': f'Bearer {token}'})
+                    with fake.urlopen(req, timeout=30) as response:
+                        self.assertEqual(json.loads(response.read()), answer)
+                    self.assertEqual(fake.calls, [(url, token, 30)])
+
+    def test_malformed_headers_are_rejected_before_response_lookup(self):
+        headers = (None, '', ORG_TOKEN, f'Basic {ORG_TOKEN}', f'bearer {ORG_TOKEN}',
+                   f'BEARER {ORG_TOKEN}', f'Bearer{ORG_TOKEN}', f'Bearer\t{ORG_TOKEN}',
+                   'Bearer ', f'Bearer  {ORG_TOKEN}', f'Bearer {ORG_TOKEN} ',
+                   f'Bearer {ORG_TOKEN}\t', f'Bearer {ORG_TOKEN} extra')
+        for authorization in headers:
+            with self.subTest(authorization=authorization):
+                responses = unittest.mock.MagicMock()
+                fake = FakeHub(responses)
+                req = urllib.request.Request(WHOAMI, headers=(
+                    {} if authorization is None else {'Authorization': authorization}))
+                with self.assertRaisesRegex(AssertionError, 'fake Hub requires'):
+                    fake.urlopen(req, timeout=30)
+                responses.__getitem__.assert_not_called()
+                self.assertEqual(fake.calls, [])
+
+
 class CensusSelection(unittest.TestCase):
     """Run each workflow's whole census step against a fake Hub.
 
@@ -216,17 +267,10 @@ class CensusSelection(unittest.TestCase):
 
     WORKFLOWS = ('.github/workflows/hf-space.yml', '.github/workflows/hf-space-drift.yml')
 
-    def run_census(self, workflow, hub, tokens):
+    def run_census(self, workflow, hub, tokens, *, source=None):
         step = yaml.safe_load((ROOT / workflow).read_text(encoding='utf-8'))['jobs']['credential']['steps'][0]
-        calls = []
-
-        def urlopen(req, timeout=None):
-            token = req.get_header('Authorization', '').removeprefix('Bearer ')
-            calls.append((req.full_url, token, timeout))
-            answer = hub[token][req.full_url]
-            if isinstance(answer, int):
-                raise urllib.error.HTTPError(req.full_url, answer, 'synthetic', {}, io.BytesIO(b'{}'))
-            return FakeResponse(answer)
+        fake = FakeHub(hub)
+        calls = fake.calls
 
         with tempfile.TemporaryDirectory() as tmp:
             summary, output = Path(tmp, 'summary.md'), Path(tmp, 'output.txt')
@@ -238,10 +282,11 @@ class CensusSelection(unittest.TestCase):
                    'GITHUB_STEP_SUMMARY': str(summary), 'GITHUB_OUTPUT': str(output)}
             stdout, exit_message = io.StringIO(), None
             with unittest.mock.patch.dict(os.environ, env), \
-                 unittest.mock.patch('urllib.request.urlopen', side_effect=urlopen), \
+                 unittest.mock.patch('urllib.request.urlopen', side_effect=fake.urlopen), \
                  unittest.mock.patch('sys.stdout', stdout):
                 try:
-                    exec(compile(step['run'], f'<{workflow} census>', 'exec'), {'__name__': '__census__'})
+                    exec(compile(step['run'] if source is None else source, f'<{workflow} census>', 'exec'),
+                         {'__name__': '__census__'})
                 except SystemExit as stop:
                     exit_message = str(stop.code)
             text = stdout.getvalue() + summary.read_text(encoding='utf-8') + output.read_text(encoding='utf-8')
@@ -281,6 +326,26 @@ class CensusSelection(unittest.TestCase):
         results = [self.run_census(workflow, hub, tokens) for workflow in self.WORKFLOWS]
         self.assertEqual(results[0], results[1], 'deploy and drift censuses disagree')
         return results[0]
+
+    def test_workflow_header_mutations_cannot_pass_selection_harness(self):
+        expected = 'headers={"Authorization": f"Bearer {token}"}'
+        mutations = ('headers={"Authorization": token}', 'headers={}',
+                     'headers={"Authorization": f"Basic {token}"}',
+                     'headers={"Authorization": f"bearer {token}"}',
+                     'headers={"Authorization": f"Bearer{token}"}',
+                     'headers={"Authorization": f"Bearer  {token}"}',
+                     'headers={"Authorization": f"Bearer {token} "}')
+        for workflow in self.WORKFLOWS:
+            source = yaml.safe_load((ROOT / workflow).read_text(encoding='utf-8'))[
+                'jobs']['credential']['steps'][0]['run']
+            self.assertEqual(source.count(expected), 1)
+            for replacement in mutations:
+                with self.subTest(workflow=workflow, replacement=replacement):
+                    # Mutate only this in-memory copy; committed workflows stay correct.
+                    mutant = source.replace(expected, replacement)
+                    with self.assertRaisesRegex(AssertionError, 'fake Hub requires'):
+                        self.run_census(workflow, self.hub(org_who=self.classic(), repo_who=self.classic()),
+                                        {'HF_ORG_TOKEN': ORG_TOKEN, 'HF_TOKEN': REPO_TOKEN}, source=mutant)
 
     def test_current_production_shape_still_selects_hf_token(self):
         # The census rows printed by deploy run 38439774145 and drift run
