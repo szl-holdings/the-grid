@@ -45,7 +45,7 @@
       "publisher_repository": "szl-holdings/the-grid",
       "publisher_workflow": ".github/workflows/hf-space.yml",
       "publisher_workflow_source_url": "https://github.com/szl-holdings/the-grid/blob/0cd569099660f5c5ef347e8d506fff793cbfefa1/.github/workflows/hf-space.yml",
-      "publisher_reusable": "szl-holdings/.github/.github/workflows/reusable-hf-deploy.yml@1b3255219cd1d5fa7ac850195b18fc907cac2cbf",
+      "publisher_reusable": "szl-holdings/.github/.github/workflows/reusable-hf-deploy.yml@6c70b2675fa6b04fc4c85109fda52aeca3ec9f9f",
       "publisher_readme_mapping": "Root README.md included by include-readme:true in the existing Dockerfile-derived target payload",
       "publication_trigger": "MAIN_PUSH_CHANGING_PUBLISHED_INPUT_OR_EXISTING_WORKFLOW_DISPATCH",
       "publication_state_at_preparation": "SOURCE_CANDIDATE_ONLY_NO_HUB_EVENT_BY_THIS_LANE",
