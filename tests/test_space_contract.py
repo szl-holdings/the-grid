@@ -23,6 +23,7 @@ HEALTHZ = ROOT / "healthz"
 DEPLOY_WORKFLOW = ROOT / ".github" / "workflows" / "hf-space.yml"
 DRIFT_WORKFLOW = ROOT / ".github" / "workflows" / "hf-space-drift.yml"
 DRIFT_SCRIPT = ROOT / ".github" / "scripts" / "hf_space_drift.py"
+PRESENTATION = ROOT / "publishing" / "hf-space-card-presentation.v1.json"
 
 SPACE_ID = "SZLHOLDINGS/the-grid"
 SOURCE_URL = "https://github.com/szl-holdings/the-grid"
@@ -150,6 +151,8 @@ class DeployWorkflowContract(unittest.TestCase):
 
     def test_calls_the_reusable_deployer_pinned_by_commit_sha(self) -> None:
         self.assertRegex(self.job["uses"], rf"^{re.escape(REUSABLE)}@[0-9a-f]{{40}}$")
+        presentation = json.loads(PRESENTATION.read_text(encoding="utf-8"))
+        self.assertEqual(presentation["cards"][0]["publisher_reusable"], self.job["uses"])
 
     def test_targets_the_canonical_space_from_the_exact_main_tip(self) -> None:
         self.assertEqual(self.inputs["hf-repo"], SPACE_ID)
