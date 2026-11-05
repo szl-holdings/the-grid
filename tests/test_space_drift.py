@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import contextlib
 import copy
+import types
 import io
 import json
 import importlib.util
@@ -119,10 +120,17 @@ class SettleLoop(unittest.TestCase):
         building = healthy()
         building["api"]["runtime"]["stage"] = "BUILDING"
         seq = [building, healthy()]
+        # Patch only the drift module's own time reference. Patching
+        # time.sleep on the shared time module also intercepts subprocess's
+        # internal poll loop (subprocess calls time.sleep while waiting on
+        # git), which made sleep.call_count machine-speed dependent.
+        real_time = drift.time
+        stub_time = types.SimpleNamespace(monotonic=real_time.monotonic,
+                                         sleep=unittest.mock.MagicMock())
         with unittest.mock.patch.object(drift, "observe", side_effect=lambda *a: copy.deepcopy(seq.pop(0))), \
              unittest.mock.patch.object(drift, "git_head_oids", return_value=dict(GIT)), \
              unittest.mock.patch.object(drift, "refresh_main", return_value=HEAD), \
-             unittest.mock.patch.object(drift.time, "sleep") as sleep, \
+             unittest.mock.patch.object(drift, "time", stub_time), \
              unittest.mock.patch.dict("os.environ", {}, clear=False) as env, \
              contextlib.redirect_stdout(io.StringIO()):
             env.pop("GITHUB_STEP_SUMMARY", None)
@@ -130,7 +138,7 @@ class SettleLoop(unittest.TestCase):
                              "--served", '{"/": "play.html", "/healthz": "healthz"}',
                              "--settle-seconds", "600", "--interval", "1"])
         self.assertEqual(rc, 0)
-        self.assertEqual(sleep.call_count, 1)
+        self.assertEqual(stub_time.sleep.call_count, 1)
 
     def test_fails_red_when_drift_persists(self) -> None:
         stale = healthy()
