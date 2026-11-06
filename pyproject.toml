@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "the-grid"
+version = "0.1.0"
+description = "THE GRID — isometric extraction protocol. Convergence ring collapse. Canonical source for HF Space SZLHOLDINGS/the-grid. Demo / vertical exhibit, not a governed kernel. Apache-2.0."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+authors = [{ name = "Stephen Lutar", email = "stephen@szlholdings.com" }]
+dependencies = []
+
+[project.urls]
+Homepage = "https://huggingface.co/spaces/SZLHOLDINGS/the-grid"
+Repository = "https://github.com/szl-holdings/the-grid"
+
+[tool.setuptools]
+packages = []
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+extend-exclude = ["build", "dist", ".venv", "node_modules"]
+
+[tool.pytest.ini_options]
+minversion = "7.0"
