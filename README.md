@@ -101,3 +101,5 @@ as an operational alert. Recovery is to re-enable this exact workflow and
 manually dispatch it on trusted `main`, then verify both credential and public
 drift jobs. The daily cron alone does not provide this external coverage;
 continuous idle monitoring remains unverified until that integration is active.
+
+Estate on Hugging Face: models, datasets and Spaces are published under the [SZLHOLDINGS](https://huggingface.co/SZLHOLDINGS) org.
