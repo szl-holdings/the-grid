@@ -1,11 +1,11 @@
-"""Read-only drift check: does the public Space SZLHOLDINGS/the-grid serve main?
+"""Read-only drift check: does Space SZLHOLDINGS/the-grid serve main?
 
 Run by .github/workflows/hf-space-drift.yml on a schedule, so a Space that has
 drifted from main (a failed or skipped deploy, a hand edit on the Hub, a stuck
 build, a stale edge) turns red between pushes instead of staying invisible.
 
-It holds no credential. It reads main through Git object fetches and uses
-anonymous HTTP GETs for the Space:
+It never writes. It reads main through Git object fetches and uses
+anonymous, read-only HTTP GETs for the Space:
   1. GET /api/spaces/<id>: the runtime must be RUNNING on the Hub head
      (runtime.sha == sha).
   2. GET /api/spaces/<id>/tree/<sha>: for every published path the Hub blob
@@ -239,7 +239,13 @@ def main(argv: list[str] | None = None) -> int:
                     found = [f"main advanced during observation (from `{source_sha}` to `{after_sha}`); "
                              "retrying a fresh snapshot"]
                 else:
-                    found, compared = problems(obs, git_oids, paths, served), True
+                    runtime_stage = ((obs.get("api") or {}).get("runtime") or {}).get("stage")
+                    if obs.get("api_status") in (401, 403):
+                        found = [f"Space API returned HTTP {obs.get('api_status')} (authentication required; no drift comparison made)"]
+                    elif runtime_stage != "RUNNING":
+                        found = [f"Space runtime stage is {runtime_stage!r}; health is not ready, so no drift comparison was made"]
+                    else:
+                        found, compared = problems(obs, git_oids, paths, served), True
         except (OSError, subprocess.SubprocessError, ValueError, TypeError) as exc:
             found = [f"source or provider observation failed: {type(exc).__name__}"]
         # A superseded run stops at once: waiting cannot make A's monitor valid for B.

@@ -4,8 +4,8 @@ name: HF Space drift watch
 # hf-space.yml only runs when a published file is pushed, so a Hub credential
 # that dies, or a Space that drifts from main, stayed invisible until the next
 # deploy attempt. This workflow turns red between pushes instead. It never
-# publishes: it calls no deployer, passes no secret to any writer, and the drift
-# job holds no credential at all.
+# publishes or changes Space visibility. The drift job deliberately receives
+# no secret; private/sleeping/unauthorized observations are reported explicitly.
 #
 #   credential: hf-space.yml's authorization-metadata census: same candidates, same
 #               requests, same write predicate and the same selection (every deploy
@@ -17,10 +17,10 @@ name: HF Space drift watch
 #               select has a scope other than exact-space or organization-wide.
 #               hf-space.yml is a published path, so the publisher adopts the
 #               scope gate only through a reviewed deploy-window change.
-#   drift:      anonymous GETs only (.github/scripts/hf_space_drift.py). Red unless
-#               the Space is RUNNING on its Hub head, every published file's Hub
-#               blob oid equals main, and / and /healthz return HTTP 200 with the
-#               exact bytes of the committed files the Dockerfile serves there.
+#   drift:      read-only GETs (.github/scripts/hf_space_drift.py), with no secret
+#               in this job. Red only after a coherent snapshot is compared and
+#               differs. A 401/403 or a non-RUNNING runtime is reported as
+#               INCONCLUSIVE (never as a false drift verdict).
 #
 # Its concurrency group is deliberately NOT the hf-write/space lock: a pending
 # watch run must never be able to displace a pending deploy.
@@ -201,7 +201,7 @@ jobs:
           git checkout -q --detach FETCH_HEAD
           test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
 
-      - name: Compare the live Space with main (anonymous GETs only)
+      - name: Compare the live Space with main (authenticated read-only GETs)
         shell: bash
         run: |
           set -euo pipefail
