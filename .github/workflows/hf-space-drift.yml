@@ -180,7 +180,7 @@ jobs:
               out.write(f"pick={pick}\n")
 
   drift:
-    name: Public Space serves main
+    name: Space serves main
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
@@ -201,7 +201,7 @@ jobs:
           git checkout -q --detach FETCH_HEAD
           test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
 
-      - name: Compare the live Space with main (authenticated read-only GETs)
+      - name: Compare the live Space with main (secret-free read-only GETs)
         shell: bash
         run: |
           set -euo pipefail
