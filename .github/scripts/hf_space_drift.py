@@ -5,8 +5,7 @@ drifted from main (a failed or skipped deploy, a hand edit on the Hub, a stuck
 build, a stale edge) turns red between pushes instead of staying invisible.
 
 It never writes. It reads main through Git object fetches and uses
-read-only HTTP GETs for the Space. When ``HF_READ_TOKEN`` is set, the token is
-sent only to Hub and Space GETs so private Spaces can be observed:
+anonymous, read-only HTTP GETs for the Space:
   1. GET /api/spaces/<id>: the runtime must be RUNNING on the Hub head
      (runtime.sha == sha).
   2. GET /api/spaces/<id>/tree/<sha>: for every published path the Hub blob
@@ -93,11 +92,8 @@ def refresh_main() -> str:
     return sha
 
 
-def get(url: str, token: str | None = None, timeout: float = 30) -> tuple[int, bytes]:
-    headers = {"User-Agent": USER_AGENT}
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-    req = urllib.request.Request(url, headers=headers)
+def get(url: str, timeout: float = 30) -> tuple[int, bytes]:
+    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return resp.status, resp.read()
@@ -107,9 +103,9 @@ def get(url: str, token: str | None = None, timeout: float = 30) -> tuple[int, b
         return 0, type(err).__name__.encode()
 
 
-def observe(space: str, paths: list[str], served: dict[str, str], token: str | None = None) -> dict:
+def observe(space: str, paths: list[str], served: dict[str, str]) -> dict:
     """One read-only observation of the Space, its Hub files and its served bytes."""
-    status, body = get(f"{HUB}/api/spaces/{space}", token)
+    status, body = get(f"{HUB}/api/spaces/{space}")
     obs: dict = {"api_status": status, "api": None, "hub_oids": {}, "smoke": {}}
     if status != 200:
         return obs
@@ -117,7 +113,7 @@ def observe(space: str, paths: list[str], served: dict[str, str], token: str | N
     obs["api"] = api
     if api.get("sha"):
         tree_url = f"{HUB}/api/spaces/{space}/tree/{api['sha']}?recursive=true"
-        status, body = get(tree_url, token)
+        status, body = get(tree_url)
         obs["tree_status"] = status
         if status == 200:
             wanted = set(paths)
@@ -128,7 +124,7 @@ def observe(space: str, paths: list[str], served: dict[str, str], token: str | N
             }
     host = (api.get("host") or "").rstrip("/")
     for route in served:
-        status, data = get(host + route, token) if host else (0, b"")
+        status, data = get(host + route) if host else (0, b"")
         obs["smoke"][route] = {"status": status, "bytes": len(data), "oid": git_blob_oid(data)}
     return obs
 
@@ -208,11 +204,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--space", required=True)
     ap.add_argument("--paths", required=True, help="JSON list of published repository paths")
     ap.add_argument("--served", required=True, help="JSON map of served route -> source path")
-    ap.add_argument("--token-env", default="HF_READ_TOKEN", help="optional environment variable holding a read-only HF token")
     ap.add_argument("--settle-seconds", type=int, default=0)
     ap.add_argument("--interval", type=int, default=60)
     args = ap.parse_args(argv)
-    token = os.environ.get(args.token_env, "").strip() or None
 
     paths = json.loads(args.paths)
     served = json.loads(args.served)
@@ -239,7 +233,7 @@ def main(argv: list[str] | None = None) -> int:
                          f"this run's monitor at `{run_sha}` is superseded and a fresh workflow run is required"]
             else:
                 git_oids = git_head_oids(wanted, source_sha)
-                obs = observe(args.space, paths, served, token)
+                obs = observe(args.space, paths, served)
                 after_sha = refresh_main()
                 if after_sha != source_sha:
                     found = [f"main advanced during observation (from `{source_sha}` to `{after_sha}`); "
