@@ -4,8 +4,8 @@ name: HF Space drift watch
 # hf-space.yml only runs when a published file is pushed, so a Hub credential
 # that dies, or a Space that drifts from main, stayed invisible until the next
 # deploy attempt. This workflow turns red between pushes instead. It never
-# publishes or changes Space visibility. The drift job may use a read-only Hub
-# token so private Spaces can be observed without treating authorization as drift.
+# publishes or changes Space visibility. The drift job deliberately receives
+# no secret; private/sleeping/unauthorized observations are reported explicitly.
 #
 #   credential: hf-space.yml's authorization-metadata census: same candidates, same
 #               requests, same write predicate and the same selection (every deploy
@@ -17,10 +17,10 @@ name: HF Space drift watch
 #               select has a scope other than exact-space or organization-wide.
 #               hf-space.yml is a published path, so the publisher adopts the
 #               scope gate only through a reviewed deploy-window change.
-#   drift:      read-only GETs (.github/scripts/hf_space_drift.py), authenticated
-#               with HF_READ_TOKEN when present. Red only after a coherent snapshot
-#               is compared and differs. A 401/403 or a non-RUNNING runtime is
-#               reported as INCONCLUSIVE (never as a false drift verdict).
+#   drift:      read-only GETs (.github/scripts/hf_space_drift.py), with no secret
+#               in this job. Red only after a coherent snapshot is compared and
+#               differs. A 401/403 or a non-RUNNING runtime is reported as
+#               INCONCLUSIVE (never as a false drift verdict).
 #
 # Its concurrency group is deliberately NOT the hf-write/space lock: a pending
 # watch run must never be able to displace a pending deploy.
@@ -185,8 +185,6 @@ jobs:
     timeout-minutes: 30
     env:
       SPACE_ID: SZLHOLDINGS/the-grid
-      # Read-only token for private Spaces; never used by a writer.
-      HF_READ_TOKEN: ${{ secrets.HF_TOKEN || secrets.HF_ORG_TOKEN }}
       # The deploy set: Dockerfile COPY sources plus the Dockerfile and the card.
       # tests/test_space_contract.py requires this to equal the Dockerfile.
       PUBLISHED_PATHS: '["ALIGN.md", "Dockerfile", "README.md", "healthz", "play.html"]'
@@ -212,5 +210,4 @@ jobs:
             --paths "$PUBLISHED_PATHS" \
             --served "$SERVED_PATHS" \
             --settle-seconds 1200 \
-            --interval 60 \
-            --token-env HF_READ_TOKEN
+            --interval 60
