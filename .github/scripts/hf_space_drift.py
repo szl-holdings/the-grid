@@ -92,10 +92,20 @@ def refresh_main() -> str:
     return sha
 
 
-def get(url: str, timeout: float = 30) -> tuple[int, bytes]:
+class _RefuseRedirect(urllib.request.HTTPRedirectHandler):
+    """Served routes must not redirect the auditor to another origin."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def get(url: str, timeout: float = 30, *, no_redirect: bool = False) -> tuple[int, bytes]:
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        # Hub metadata retains normal canonical redirects; served routes do not.
+        client = urllib.request.build_opener(_RefuseRedirect()) if no_redirect else None
+        response = client.open(req, timeout=timeout) if client else urllib.request.urlopen(req, timeout=timeout)
+        with response as resp:
             return resp.status, resp.read()
     except urllib.error.HTTPError as err:
         return err.code, err.read() or b""
@@ -122,9 +132,15 @@ def observe(space: str, paths: list[str], served: dict[str, str]) -> dict:
                 for e in json.loads(body)
                 if e.get("type") == "file" and e.get("path") in wanted
             }
-    host = (api.get("host") or "").rstrip("/")
+    # An API response is not authorization to make arbitrary network GETs.
+    # Only the exact HTTPS origin of this owning HF Space is permitted.
+    expected_host = f"https://{space.lower().replace('/', '-')}.hf.space"
+    host = api.get("host")
+    obs["host_valid"] = host == expected_host
+    if not obs["host_valid"]:
+        return obs
     for route in served:
-        status, data = get(host + route) if host else (0, b"")
+        status, data = get(host + route, no_redirect=True)
         obs["smoke"][route] = {"status": status, "bytes": len(data), "oid": git_blob_oid(data)}
     return obs
 
@@ -136,6 +152,8 @@ def problems(obs: dict, git_oids: dict[str, str], paths: list[str], served: dict
         return [f"Space API returned HTTP {obs.get('api_status')}"]
     api = obs["api"]
     runtime = api.get("runtime") or {}
+    if obs.get("host_valid") is False:
+        found.append("Space host is not the expected owning HTTPS hf.space origin")
     if runtime.get("stage") != "RUNNING":
         found.append(f"runtime stage is {runtime.get('stage')!r}, not 'RUNNING'")
     if not api.get("sha") or runtime.get("sha") != api.get("sha"):
