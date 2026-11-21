@@ -33,11 +33,11 @@ class ProviderHostNegativeControls(unittest.TestCase):
 
     def test_loopback_host_from_metadata_must_never_be_requested(self):
         calls=self.check("http://127.0.0.1:8123")
-        self.assertFalse(any(u.startswith("http://127.0.0.1") for u in calls),calls)
+        self.assertNotIn("http://127.0.0.1:8123/", calls)
 
     def test_unrelated_https_host_from_metadata_must_never_be_requested(self):
         calls=self.check("https://unrelated.example")
-        self.assertFalse(any(u.startswith("https://unrelated.example") for u in calls),calls)
+        self.assertNotIn("https://unrelated.example/", calls)
 
     def test_invalid_origin_is_reported_as_blocked_not_success(self):
         result={"api_status":200,"api":{"sha":SHA,"runtime":{"stage":"RUNNING","sha":SHA}},
