@@ -9,6 +9,7 @@ WORKDIR /app
 # Every COPY source below is the Space deploy set: the reusable deployer
 # (.github/workflows/hf-space.yml) derives the files it publishes from these lines.
 COPY play.html index.html
+COPY play.html ./play.html
 COPY healthz ./healthz
 COPY README.md ALIGN.md ./
 ENV PORT=7860
