@@ -342,9 +342,12 @@ class DriftWatchContract(unittest.TestCase):
         for line in dockerfile_instructions():
             match = re.match(r"^COPY\s+(\S+)\s+(\S+)$", line, re.IGNORECASE)
             if match:
-                copies[match.group(1)] = match.group(2)
-        self.assertEqual(copies.get(served["/"]), "index.html")
-        self.assertEqual(copies.get(served["/healthz"]), "./healthz")
+                copies.setdefault(match.group(1), set()).add(match.group(2))
+        self.assertIn("index.html", copies.get(served["/"], set()))
+        self.assertIn("./healthz", copies.get(served["/healthz"], set()))
+        # / is the direct game; the README also advertises /play.html.
+        # A source copied only as index.html does not create that deep link.
+        self.assertIn("./play.html", copies.get("play.html", set()))
 
     def test_runs_the_committed_drift_script(self) -> None:
         steps = self.jobs["drift"]["steps"]
