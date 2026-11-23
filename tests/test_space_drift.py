@@ -97,6 +97,39 @@ class Verdict(unittest.TestCase):
         self.assertIn("GET / serves blob", self.check(obs)[0])
 
 
+class StrictProviderJson(unittest.TestCase):
+    def test_valid_provider_json_still_decodes(self) -> None:
+        self.assertEqual(drift.strict_json_loads(b'{"a":[1,2.5],"nested":{"ok":true}}'),
+                         {"a": [1, 2.5], "nested": {"ok": True}})
+
+    def test_ambiguous_and_nonfinite_json_fail_closed(self) -> None:
+        invalid = (
+            b'{"sha":"a","sha":"b"}',
+            b'{"nested":{"sha":"a","sha":"b"}}',
+            b'{"x":NaN}',
+            b'{"x":Infinity}',
+            b'{"x":-Infinity}',
+            b'{"x":1e999}',
+        )
+        for body in invalid:
+            with self.subTest(body=body), self.assertRaises(ValueError):
+                drift.strict_json_loads(body)
+
+    def test_observe_rejects_duplicate_hub_metadata(self) -> None:
+        with unittest.mock.patch.object(drift, "get", return_value=(200, b'{"sha":"a","sha":"b"}')):
+            with self.assertRaises(ValueError):
+                drift.observe("SZLHOLDINGS/the-grid", [], {})
+
+    def test_observe_rejects_nonfinite_hub_tree(self) -> None:
+        api = {"sha": HEAD, "host": "https://szlholdings-the-grid.hf.space",
+               "runtime": {"stage": "RUNNING", "sha": HEAD}}
+        responses = [(200, json.dumps(api).encode()),
+                     (200, b'[{"type":"file","path":"play.html","oid":NaN}]')]
+        with unittest.mock.patch.object(drift, "get", side_effect=responses):
+            with self.assertRaises(ValueError):
+                drift.observe("SZLHOLDINGS/the-grid", PATHS, SERVED)
+
+
 class BlobOid(unittest.TestCase):
     def test_matches_git_hash_object(self) -> None:
         for name in ("healthz", "play.html"):

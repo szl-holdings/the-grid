@@ -37,6 +37,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import re
 import subprocess
@@ -50,6 +51,31 @@ USER_AGENT = "szl-holdings/the-grid hf-space-drift (read-only)"
 # What defines the comparison itself: the Dockerfile (served routes and the deploy
 # set), the workflow (paths, routes and arguments) and this script (the logic).
 CONTROLS = ("Dockerfile", ".github/workflows/hf-space-drift.yml", ".github/scripts/hf_space_drift.py")
+
+
+def strict_json_loads(data: bytes | str):
+    """Reject ambiguous or non-finite provider JSON before drift comparisons."""
+    def unique_object(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError("duplicate JSON object name")
+            result[key] = value
+        return result
+
+    def finite_float(token):
+        value = float(token)
+        if not math.isfinite(value):
+            raise ValueError("non-finite JSON number")
+        return value
+
+    def reject_constant(_token):
+        raise ValueError("nonstandard JSON constant")
+
+    return json.loads(
+        data, object_pairs_hook=unique_object,
+        parse_constant=reject_constant, parse_float=finite_float,
+    )
 
 
 def git_blob_oid(data: bytes) -> str:
@@ -119,7 +145,7 @@ def observe(space: str, paths: list[str], served: dict[str, str]) -> dict:
     obs: dict = {"api_status": status, "api": None, "hub_oids": {}, "smoke": {}}
     if status != 200:
         return obs
-    api = json.loads(body)
+    api = strict_json_loads(body)
     obs["api"] = api
     if api.get("sha"):
         tree_url = f"{HUB}/api/spaces/{space}/tree/{api['sha']}?recursive=true"
@@ -129,7 +155,7 @@ def observe(space: str, paths: list[str], served: dict[str, str]) -> dict:
             wanted = set(paths)
             obs["hub_oids"] = {
                 e["path"]: e.get("oid")
-                for e in json.loads(body)
+                for e in strict_json_loads(body)
                 if e.get("type") == "file" and e.get("path") in wanted
             }
     # An API response is not authorization to make arbitrary network GETs.
@@ -226,8 +252,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--interval", type=int, default=60)
     args = ap.parse_args(argv)
 
-    paths = json.loads(args.paths)
-    served = json.loads(args.served)
+    paths = strict_json_loads(args.paths)
+    served = strict_json_loads(args.served)
     if args.settle_seconds < 0 or args.interval <= 0:
         ap.error("settle-seconds must be nonnegative and interval must be positive")
     wanted = sorted(set(paths) | set(served.values()))
