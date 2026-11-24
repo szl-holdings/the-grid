@@ -8,6 +8,9 @@ app_port: 7860
 pinned: false
 license: apache-2.0
 short_description: Isometric extraction protocol. Survive the Convergence.
+szl:
+  source_repo: szl-holdings/the-grid
+  proof_url: https://github.com/szl-holdings/the-grid
 ---
 
 <!-- szl:header v1 -->
