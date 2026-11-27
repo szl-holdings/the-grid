@@ -1,0 +1,26 @@
+{
+ "artifacts": [
+  ".gitattributes",
+  "ALIGN.md",
+  "Dockerfile",
+  "Dockerfile.dockerignore",
+  "README.md",
+  "assets",
+  "assets/szl-card",
+  "assets/szl-card/mesh-receipts.svg",
+  "assets/szl-card/org-context.svg",
+  "docs",
+  "docs/FRONTIER.md",
+  "docs/OPERATIONAL.md",
+  "healthz",
+  "index.html",
+  "play.html"
+ ],
+ "generated_utc": "2026-11-26T23:31:49Z",
+ "head": "c94d84bb8dfe25afa6a844938c851387bc85c127",
+ "kind": "space",
+ "renderer": "device stdlib fibonacci-axon v11",
+ "repo": "SZLHOLDINGS/the-grid",
+ "schema": "szl-holo-card/v1.1-ds-sp",
+ "sig_namespace": "file"
+}

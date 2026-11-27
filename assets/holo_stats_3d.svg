@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 420" font-family="DejaVu Sans Mono, Consolas, monospace">
+<defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0b0f1a"/><stop offset="1" stop-color="#141c2f"/></linearGradient>
+<filter id="glow" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="3.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+<linearGradient id="g0" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#00e5ff"/><stop offset="1" stop-color="#0a4a5c"/></linearGradient>
+<linearGradient id="g1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7c4dff"/><stop offset="1" stop-color="#34146e"/></linearGradient>
+<linearGradient id="g2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ff4dd8"/><stop offset="1" stop-color="#6e1a58"/></linearGradient>
+<linearGradient id="g3" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#00ff9d"/><stop offset="1" stop-color="#044f30"/></linearGradient>
+<linearGradient id="g4" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffb84d"/><stop offset="1" stop-color="#5e3c12"/></linearGradient>
+</defs>
+<rect width="880" height="420" fill="url(#bg)"/>
+<rect x="6" y="6" width="868" height="408" fill="none" stroke="#00e5ff" stroke-opacity="0.35" rx="10"/>
+<text x="26" y="34" fill="#e8fbff" font-size="15" font-weight="bold">SZL ESTATE HOLO-3D · the-grid</text>
+<text x="26" y="52" fill="#7fd8e8" font-size="10">live hub metrics · isometric 3D prisms · gen 2026-11-26T23:31Z · loop-10 non-overlap verified</text>
+<rect x="40" y="322" width="800" height="60" fill="#0d1524" opacity="0.6"/>
+<line x1="40" y1="322" x2="840" y2="322" stroke="#1b3a5c" stroke-width="1.5"/>
+<polygon points="114.4,322 169.8,336 154.2,327 130,313" fill="#000000" opacity="0.35"/>
+<polygon points="114.4,313 130,313 130,322 114.4,331" fill="#0a4a5c" stroke="#00e5ff" stroke-width="1" opacity="0.8"/>
+<polygon points="130,322 154.2,336 154.2,327 130,313" fill="url(#g0)" stroke="#00e5ff" stroke-width="1" opacity="0.92"/>
+<polygon points="114.4,322 169.8,336 154.2,327 130,313" fill="url(#g0)" stroke="#00e5ff" stroke-width="1" filter="url(#glow)" opacity="0.96"/>
+<polygon points="130,313 154.2,327 138.6,336 114.4,322" fill="#00e5ff" stroke="#ffffff" stroke-opacity="0.6" stroke-width="1" opacity="0.95"/>
+<text x="134.3" y="303" fill="#00e5ff" font-size="13" text-anchor="middle" font-weight="bold">0</text>
+<text x="130" y="362.0" fill="#9fb8cc" font-size="11" text-anchor="middle">LIKES</text>
+<polygon points="266.4,161 321.8,175 306.2,166 282,152" fill="#000000" opacity="0.35"/>
+<polygon points="266.4,152 282,152 282,322 266.4,331" fill="#34146e" stroke="#7c4dff" stroke-width="1" opacity="0.8"/>
+<polygon points="282,322 306.2,336 306.2,166 282,152" fill="url(#g1)" stroke="#7c4dff" stroke-width="1" opacity="0.92"/>
+<polygon points="266.4,161 321.8,175 306.2,166 282,152" fill="url(#g1)" stroke="#7c4dff" stroke-width="1" filter="url(#glow)" opacity="0.96"/>
+<polygon points="282,152 306.2,166 290.6,175 266.4,161" fill="#7c4dff" stroke="#ffffff" stroke-opacity="0.6" stroke-width="1" opacity="0.95"/>
+<text x="286.3" y="142" fill="#7c4dff" font-size="13" text-anchor="middle" font-weight="bold">15</text>
+<text x="282" y="362.0" fill="#9fb8cc" font-size="11" text-anchor="middle">FILES</text>
+<polygon points="418.4,322 473.8,336 458.2,327 434,313" fill="#000000" opacity="0.35"/>
+<polygon points="418.4,313 434,313 434,322 418.4,331" fill="#6e1a58" stroke="#ff4dd8" stroke-width="1" opacity="0.8"/>
+<polygon points="434,322 458.2,336 458.2,327 434,313" fill="url(#g2)" stroke="#ff4dd8" stroke-width="1" opacity="0.92"/>
+<polygon points="418.4,322 473.8,336 458.2,327 434,313" fill="url(#g2)" stroke="#ff4dd8" stroke-width="1" filter="url(#glow)" opacity="0.96"/>
+<polygon points="434,313 458.2,327 442.6,336 418.4,322" fill="#ff4dd8" stroke="#ffffff" stroke-opacity="0.6" stroke-width="1" opacity="0.95"/>
+<text x="438.3" y="303" fill="#ff4dd8" font-size="13" text-anchor="middle" font-weight="bold">0</text>
+<text x="434" y="362.0" fill="#9fb8cc" font-size="11" text-anchor="middle">PY FILES</text>
+<polygon points="570.4,309 625.8,323 610.2,314 586,300" fill="#000000" opacity="0.35"/>
+<polygon points="570.4,300 586,300 586,322 570.4,331" fill="#044f30" stroke="#00ff9d" stroke-width="1" opacity="0.8"/>
+<polygon points="586,322 610.2,336 610.2,314 586,300" fill="url(#g3)" stroke="#00ff9d" stroke-width="1" opacity="0.92"/>
+<polygon points="570.4,309 625.8,323 610.2,314 586,300" fill="url(#g3)" stroke="#00ff9d" stroke-width="1" filter="url(#glow)" opacity="0.96"/>
+<polygon points="586,300 610.2,314 594.6,323 570.4,309" fill="#00ff9d" stroke="#ffffff" stroke-opacity="0.6" stroke-width="1" opacity="0.95"/>
+<text x="590.3" y="290" fill="#00ff9d" font-size="13" text-anchor="middle" font-weight="bold">2</text>
+<text x="586" y="362.0" fill="#9fb8cc" font-size="11" text-anchor="middle">ASSETS</text>
+<polygon points="722.4,322 777.8,336 762.2,327 738,313" fill="#000000" opacity="0.35"/>
+<polygon points="722.4,313 738,313 738,322 722.4,331" fill="#5e3c12" stroke="#ffb84d" stroke-width="1" opacity="0.8"/>
+<polygon points="738,322 762.2,336 762.2,327 738,313" fill="url(#g4)" stroke="#ffb84d" stroke-width="1" opacity="0.92"/>
+<polygon points="722.4,322 777.8,336 762.2,327 738,313" fill="url(#g4)" stroke="#ffb84d" stroke-width="1" filter="url(#glow)" opacity="0.96"/>
+<polygon points="738,313 762.2,327 746.6,336 722.4,322" fill="#ffb84d" stroke="#ffffff" stroke-opacity="0.6" stroke-width="1" opacity="0.95"/>
+<text x="742.3" y="303" fill="#ffb84d" font-size="13" text-anchor="middle" font-weight="bold">0</text>
+<text x="738" y="362.0" fill="#9fb8cc" font-size="11" text-anchor="middle">FRESH DAYS</text>
+<text x="26" y="406" fill="#4f6a85" font-size="9">source: huggingface hub api (measured, nothing fabricated) · isometric recipe: (X-Y)cos30 / (X+Y)0.5-Z · receipts: SZLHOLDINGS/wave-logs mesh/2026-11-26/ouroboros/holo3d-cards/ · loop-10 verified</text>
+</svg>

@@ -31,6 +31,15 @@ Proof: [a11oy.net](https://a11oy.net)
 <p><small>Orbit v2 artwork © SZL Holdings · <a href="https://github.com/szl-holdings/szl-brand/blob/4309f6fce89179331b0b3ed8c99494e76c5be256/kit/LICENSE">CC BY 4.0</a>. The SZL name and mark remain trademarks; source-code and data licenses remain as declared.</small></p>
 
 # The Grid · Interactive Exhibit
+<!-- HOLO3D:v1 -->
+## SZL Holo-Stats 3D
+
+![SZL Holo-Stats 3D](assets/holo_stats_3d.svg)
+
+*Live hub metrics, isometric holo render, geometrically non-overlapping, 2026-11-26T23:31Z. Receipts: SZLHOLDINGS/wave-logs mesh/2026-11-26/ouroboros/holo3d-cards/*
+
+<p align="center"><img src="https://huggingface.co/spaces/SZLHOLDINGS/the-grid/resolve/main/holo/banner.svg" alt="SZL Holo Banner"></p>
+
 
 Play an isometric extraction game: explore the grid, collect resources and escape before convergence.
 
@@ -106,3 +115,8 @@ drift jobs. The daily cron alone does not provide this external coverage;
 continuous idle monitoring remains unverified until that integration is active.
 
 Estate on Hugging Face: models, datasets and Spaces are published under the [SZLHOLDINGS](https://huggingface.co/SZLHOLDINGS) org.
+
+
+## Governance provenance
+
+Governed asset of the SZLHOLDINGS estate (szl governance program, measured-truth doctrine); provenance receipts are published under github.com/szl-holdings governance repositories.
