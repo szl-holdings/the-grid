@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="640">
+<rect width="640" height="640" fill="#04060e"/>
+<circle cx="233.8" cy="425.53" r="6.08" fill="none" stroke="hsl(110,80%,53%)" stroke-width="1.1"/>
+<circle cx="142.55" cy="330.44" r="5.56" fill="none" stroke="hsl(121,80%,53%)" stroke-width="1.1"/>
+<circle cx="227.98" cy="425.68" r="6.54" fill="none" stroke="hsl(132,80%,51%)" stroke-width="1.1"/>
+<circle cx="306.25" cy="370.62" r="2.7" fill="none" stroke="hsl(143,80%,62%)" stroke-width="1.1"/>
+<circle cx="128.6" cy="296.36" r="2.15" fill="none" stroke="hsl(154,80%,72%)" stroke-width="1.1"/>
+<circle cx="382.38" cy="444.38" r="4.39" fill="none" stroke="hsl(165,80%,58%)" stroke-width="1.1"/>
+<circle cx="250.32" cy="262.28" r="4.84" fill="none" stroke="hsl(176,80%,55%)" stroke-width="1.1"/>
+<circle cx="237.79" cy="344.82" r="3.88" fill="none" stroke="hsl(187,80%,64%)" stroke-width="1.1"/>
+<circle cx="454.22" cy="376.91" r="2.33" fill="none" stroke="hsl(198,80%,63%)" stroke-width="1.1"/>
+<circle cx="205.64" cy="211.83" r="2.62" fill="none" stroke="hsl(209,80%,63%)" stroke-width="1.1"/>
+<circle cx="412.49" cy="387.39" r="4.73" fill="none" stroke="hsl(220,80%,46%)" stroke-width="1.1"/>
+<circle cx="410.45" cy="260.42" r="5.2" fill="none" stroke="hsl(231,80%,70%)" stroke-width="1.1"/>
+<circle cx="278.16" cy="244.74" r="3.71" fill="none" stroke="hsl(242,80%,76%)" stroke-width="1.1"/>
+<circle cx="516.92" cy="347.05" r="2.29" fill="none" stroke="hsl(253,80%,67%)" stroke-width="1.1"/>
+<circle cx="362.65" cy="193.39" r="5.04" fill="none" stroke="hsl(264,80%,75%)" stroke-width="1.1"/>
+<circle cx="427.26" cy="279.8" r="5.7" fill="none" stroke="hsl(275,80%,70%)" stroke-width="1.1"/>
+<circle cx="491.41" cy="250.6" r="4.19" fill="none" stroke="hsl(286,80%,52%)" stroke-width="1.1"/>
+<text x="20" y="30" fill="#9fe8ff" font-family="monospace" font-size="14">the-grid</text>
+<text x="20" y="615" fill="#5f7fa8" font-family="monospace" font-size="11"> szl-holo-card/v1.1-ds-sp head c94d84bb8d manifest a9161a4ca2fb2d62</text>
+</svg>
